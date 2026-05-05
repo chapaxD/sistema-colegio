@@ -1,0 +1,106 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      Role     @default(TEACHER)
+  teacher   Teacher?
+  createdAt DateTime @default(now())
+}
+
+model Teacher {
+  id          Int                 @id @default(autoincrement())
+  userId      Int                 @unique
+  user        User                @relation(fields: [userId], references: [id])
+  firstName   String
+  lastName    String
+  assignments SubjectAssignment[]
+}
+
+model Student {
+  id          Int          @id @default(autoincrement())
+  rude        String       @unique // Registro Único de Estudiante (Bolivia)
+  firstName   String
+  lastName    String
+  birthDate   DateTime?
+  enrollments Enrollment[]
+}
+
+model Course {
+  id          Int                 @id @default(autoincrement())
+  level       String // Ej: 1ro de Primaria
+  parallel    String // Ej: A
+  enrollments Enrollment[]
+  assignments SubjectAssignment[]
+}
+
+model Subject {
+  id          Int                 @id @default(autoincrement())
+  name        String // Ej: Matemáticas
+  assignments SubjectAssignment[]
+  grades      Grade[]
+}
+
+model AcademicYear {
+  id          Int                 @id @default(autoincrement())
+  year        Int                 @unique // Ej: 2024
+  enrollments Enrollment[]
+  assignments SubjectAssignment[]
+}
+
+model Enrollment {
+  id             Int          @id @default(autoincrement())
+  studentId      Int
+  courseId       Int
+  academicYearId Int
+  student        Student      @relation(fields: [studentId], references: [id])
+  course         Course       @relation(fields: [courseId], references: [id])
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  grades         Grade[]
+  createdAt      DateTime     @default(now())
+
+  @@unique([studentId, academicYearId]) // Un estudiante solo se inscribe una vez por año
+}
+
+model SubjectAssignment {
+  id             Int          @id @default(autoincrement())
+  teacherId      Int
+  subjectId      Int
+  courseId       Int
+  academicYearId Int
+  teacher        Teacher      @relation(fields: [teacherId], references: [id])
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+  course         Course       @relation(fields: [courseId], references: [id])
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([subjectId, courseId, academicYearId]) // Solo un docente por materia/curso/año
+}
+
+model Grade {
+  id           Int        @id @default(autoincrement())
+  score        Int // 0 - 100
+  period       Int // 1, 2, 3 (Trimestres)
+  enrollmentId Int
+  subjectId    Int
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id])
+  subject      Subject    @relation(fields: [subjectId], references: [id])
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([enrollmentId, subjectId, period]) // Solo una nota por periodo/materia/inscripción
+}

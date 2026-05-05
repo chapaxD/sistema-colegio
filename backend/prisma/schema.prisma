@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  TEACHER
+}
+
+model School {
+  id              Int                 @id @default(autoincrement())
+  name            String
+  slug            String              @unique
+  address         String?
+  phone           String?
+  directorName    String?
+  educationalLevel String?            @default("Primaria Comunitaria Vocacional")
+  createdAt       DateTime            @default(now())
+  
+  users           User[]
+  students        Student[]
+  courses         Course[]
+  subjects        Subject[]
+  years           AcademicYear[]
+  events          Event[]
+  assignments     SubjectAssignment[]
+  enrollments     Enrollment[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      Role     @default(TEACHER)
+  schoolId  Int
+  school    School   @relation(fields: [schoolId], references: [id])
+  teacher   Teacher?
+  createdAt DateTime @default(now())
+}
+
+model Teacher {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  user      User     @relation(fields: [userId], references: [id])
+  firstName String
+  lastName  String
+  assignments SubjectAssignment[]
+}
+
+model Student {
+  id          Int          @id @default(autoincrement())
+  rude        String       @unique
+  firstName   String
+  lastName    String
+  birthDate   DateTime?
+  isActive    Boolean      @default(true)
+  schoolId    Int
+  school      School       @relation(fields: [schoolId], references: [id])
+  enrollments Enrollment[]
+}
+
+model Course {
+  id          Int          @id @default(autoincrement())
+  level       String
+  parallel    String
+  schoolId    Int
+  school      School       @relation(fields: [schoolId], references: [id])
+  enrollments Enrollment[]
+  assignments SubjectAssignment[]
+  evaluations Evaluation[]
+
+  @@unique([level, parallel, schoolId], name: "level_parallel_school")
+}
+
+model Subject {
+  id          Int      @id @default(autoincrement())
+  name        String
+  sortOrder   Int      @default(0)
+  schoolId    Int
+  school      School   @relation(fields: [schoolId], references: [id])
+  assignments SubjectAssignment[]
+  grades      Grade[]
+  attendances Attendance[]
+  evaluations Evaluation[]
+  dimensionScores DimensionScore[]
+
+  @@unique([name, schoolId])
+}
+
+model AcademicYear {
+  id          Int          @id @default(autoincrement())
+  year        Int
+  schoolId    Int
+  school      School       @relation(fields: [schoolId], references: [id])
+  enrollments Enrollment[]
+  assignments SubjectAssignment[]
+
+  @@unique([year, schoolId])
+}
+
+model Enrollment {
+  id             Int          @id @default(autoincrement())
+  studentId      Int
+  courseId       Int
+  academicYearId Int
+  schoolId       Int
+  student        Student      @relation(fields: [studentId], references: [id])
+  course         Course       @relation(fields: [courseId], references: [id])
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  school         School       @relation(fields: [schoolId], references: [id])
+  grades         Grade[]
+  attendances    Attendance[]
+  evaluationScores EvaluationScore[]
+  dimensionScores DimensionScore[]
+  createdAt      DateTime     @default(now())
+
+  @@unique([studentId, academicYearId])
+}
+
+model SubjectAssignment {
+  id             Int          @id @default(autoincrement())
+  teacherId      Int
+  subjectId      Int
+  courseId       Int
+  academicYearId Int
+  schoolId       Int
+  teacher        Teacher      @relation(fields: [teacherId], references: [id])
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+  course         Course       @relation(fields: [courseId], references: [id])
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  school         School       @relation(fields: [schoolId], references: [id])
+
+  @@unique([subjectId, courseId, academicYearId])
+}
+
+model Grade {
+  id           Int      @id @default(autoincrement())
+  score        Int
+  period       Int
+  enrollmentId Int
+  subjectId    Int
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id])
+  subject      Subject    @relation(fields: [subjectId], references: [id])
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([enrollmentId, subjectId, period])
+}
+
+model Attendance {
+  id             Int          @id @default(autoincrement())
+  date           DateTime     @default(now())
+  status         String
+  enrollmentId   Int
+  subjectId      Int
+  enrollment     Enrollment   @relation(fields: [enrollmentId], references: [id])
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+
+  @@unique([date, enrollmentId, subjectId])
+}
+
+model Evaluation {
+  id             Int          @id @default(autoincrement())
+  title          String
+  dimension      String
+  courseId       Int
+  subjectId      Int
+  period         Int
+  scores         EvaluationScore[]
+  course         Course       @relation(fields: [courseId], references: [id])
+  subject        Subject    @relation(fields: [subjectId], references: [id])
+}
+
+model EvaluationScore {
+  id             Int          @id @default(autoincrement())
+  score          Int
+  evaluationId   Int
+  enrollmentId   Int
+  evaluation     Evaluation   @relation(fields: [evaluationId], references: [id])
+  enrollment     Enrollment   @relation(fields: [enrollmentId], references: [id])
+
+  @@unique([evaluationId, enrollmentId])
+}
+
+model DimensionScore {
+  id             Int          @id @default(autoincrement())
+  enrollmentId   Int
+  subjectId      Int
+  period         Int
+  ser            Int          @default(0)
+  autoSer        Int          @default(0)
+  enrollment     Enrollment   @relation(fields: [enrollmentId], references: [id])
+  subject        Subject    @relation(fields: [subjectId], references: [id])
+
+  @@unique([enrollmentId, subjectId, period])
+}
+
+model Event {
+  id          Int      @id @default(autoincrement())
+  title       String
+  date        DateTime
+  description String?
+  schoolId    Int
+  school      School   @relation(fields: [schoolId], references: [id])
+  updatedAt   DateTime @updatedAt
+}
