@@ -100,7 +100,7 @@ onUnmounted(() => {
         <div class="stat-content">
           <span class="stat-label">Cursos Activos</span>
           <h2 class="stat-value">{{ stats.totalCourses }}</h2>
-          <span class="stat-desc">Gestión 2024</span>
+          <span class="stat-desc">Gestión 2026</span>
         </div>
       </div>
 

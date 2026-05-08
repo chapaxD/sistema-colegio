@@ -74,7 +74,7 @@ const handleLogin = async () => {
       </form>
       
       <div class="login-footer">
-        <p>© 2024 Gestión Académica Bolivia</p>
+        <p>© 2026 Gestión Académica Bolivia</p>
       </div>
     </div>
   </div>
