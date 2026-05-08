@@ -32,11 +32,11 @@ const manualData = ref({
 })
 
 const settings = ref({
-  schoolName: 'GUALBERTO VILLARROEL III',
-  teacherName: 'AMALIA YARVI',
-  directorName: 'LIC. AIDA YARVI FLORES',
-  level: 'PRIMARIA',
-  year: '2026'
+  schoolName: '',
+  teacherName: '',
+  directorName: '',
+  level: '',
+  year: new Date().getFullYear().toString()
 })
 
 const loadSettings = async () => {
@@ -57,9 +57,19 @@ const loadSettings = async () => {
 
   // Load courses
   try {
-    const res = await api.get('/academic/courses')
-    courses.value = res.data
-  } catch (err) {}
+    const [coursesRes, schoolRes] = await Promise.all([
+      api.get('/academic/courses'),
+      api.get('/schools/my')
+    ])
+    courses.value = coursesRes.data
+    if (schoolRes.data) {
+      settings.value.schoolName = schoolRes.data.name
+      settings.value.directorName = schoolRes.data.directorName || 'Director(a) no asignado(a)'
+      settings.value.level = schoolRes.data.educationalLevel || ''
+    }
+  } catch (err) {
+    console.error('Error loading school or courses data')
+  }
 }
 
 onMounted(() => {

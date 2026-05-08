@@ -21,11 +21,11 @@ const loading = ref(false)
 const generatingPDF = ref(false)
 
 const settings = ref({
-  schoolName: 'GUALBERTO VILLARROEL III',
-  teacherName: 'AMALIA YARVI',
-  directorName: 'LIC. AIDA YARVI FLORES',
-  level: 'PRIMARIA',
-  year: '2026'
+  schoolName: '',
+  teacherName: '',
+  directorName: '',
+  level: '',
+  year: new Date().getFullYear().toString()
 })
 
 onMounted(async () => {
@@ -69,8 +69,8 @@ const fetchData = async () => {
 
     if (schoolRes.data) {
       settings.value.schoolName = schoolRes.data.name
-      settings.value.directorName = schoolRes.data.directorName || 'Lic. Magda Zeballos'
-      settings.value.level = schoolRes.data.educationalLevel || 'Primaria Comunitaria Vocacional'
+      settings.value.directorName = schoolRes.data.directorName || 'Director(a) no asignado(a)'
+      settings.value.level = schoolRes.data.educationalLevel || ''
     }
 
     if (activeTab.value === 'trimester') {
