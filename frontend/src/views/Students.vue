@@ -28,6 +28,8 @@ const newStudent = ref({
   rude: '',
   firstName: '',
   lastName: '',
+  gender: 'M',
+  phone: '',
   birthDate: null
 })
 
@@ -53,12 +55,14 @@ const openModal = (student = null) => {
       rude: student.rude,
       firstName: student.firstName,
       lastName: student.lastName,
+      gender: student.gender || 'M',
+      phone: student.phone || '',
       birthDate: student.birthDate ? student.birthDate.split('T')[0] : ''
     }
   } else {
     isEditing.value = false
     editingId.value = null
-    newStudent.value = { rude: '', firstName: '', lastName: '', birthDate: null }
+    newStudent.value = { rude: '', firstName: '', lastName: '', gender: 'M', phone: '', birthDate: null }
   }
   showModal.value = true
 }
@@ -67,7 +71,7 @@ const closeModal = () => {
   showModal.value = false
   isEditing.value = false
   editingId.value = null
-  newStudent.value = { rude: '', firstName: '', lastName: '', birthDate: null }
+  newStudent.value = { rude: '', firstName: '', lastName: '', gender: 'M', phone: '', birthDate: null }
 }
 
 const filteredStudents = computed(() => {
@@ -421,6 +425,19 @@ const reactivateStudent = async (id) => {
             <div class="form-group">
               <label>Nombres</label>
               <input v-model="newStudent.firstName" type="text" class="input-field" required />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Género</label>
+              <select v-model="newStudent.gender" class="input-field" required>
+                <option value="M">Masculino</option>
+                <option value="F">Femenino</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Celular / Teléfono</label>
+              <input v-model="newStudent.phone" type="text" class="input-field" placeholder="70000000" />
             </div>
           </div>
           <div class="form-group">

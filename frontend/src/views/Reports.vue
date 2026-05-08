@@ -15,6 +15,22 @@ const searching = ref(false)
 const generatingPDF = ref(false)
 const error = ref('')
 
+const activeTab = ref('bulletin')
+const courses = ref([])
+const selectedCourse = ref('')
+const selectedTrimester = ref(1)
+const pedagogicalData = ref(null)
+const manualData = ref({
+  area: '',
+  avance: '',
+  aprovechamiento: '',
+  logros: '',
+  dificultades: '',
+  sugerencias: '',
+  learningIssuesIds: [],
+  subjectAvance: {}
+})
+
 const settings = ref({
   schoolName: 'GUALBERTO VILLARROEL III',
   teacherName: 'AMALIA YARVI',
@@ -38,6 +54,12 @@ const loadSettings = async () => {
       console.error('Error fetching teacher profile', err)
     }
   }
+
+  // Load courses
+  try {
+    const res = await api.get('/academic/courses')
+    courses.value = res.data
+  } catch (err) {}
 }
 
 onMounted(() => {
@@ -187,13 +209,214 @@ const generatePDF = () => {
   win.document.write(html)
   win.document.close()
 }
+
+const fetchPedagogicalData = async () => {
+  if (!selectedCourse.value) return
+  loading.value = true
+  pedagogicalData.value = null
+  try {
+    const res = await api.get(`/grades/pedagogical/${selectedCourse.value}`)
+    pedagogicalData.value = res.data
+    
+    // Inicializar tabla de avance si hay materias
+    if (res.data.subjects) {
+      res.data.subjects.forEach(s => {
+        if (!manualData.value.subjectAvance[s.id]) {
+          manualData.value.subjectAvance[s.id] = { prog: '100', avan: '', pend: '' }
+        }
+      })
+    }
+  } catch (err) {
+    error.value = 'Error al cargar datos del curso'
+  } finally {
+    loading.value = false
+  }
+}
+
+const printPedagogical = () => {
+  if (!pedagogicalData.value) return
+
+  const course = courses.value.find(c => c.id === parseInt(selectedCourse.value))
+  const courseName = course ? `${course.level} ${course.parallel}` : ''
+  
+  // Página 1: Atrasos
+  const attendanceRows = pedagogicalData.value.attendanceIssues.map((item, idx) => `
+    <tr>
+      <td style="border:1px solid #000;padding:5px;">${idx + 1}</td>
+      <td style="border:1px solid #000;padding:5px;text-align:left;">${item.fullName}</td>
+      <td style="border:1px solid #000;padding:5px;">${item.phone}</td>
+    </tr>
+  `).join('')
+  const emptyAttendance = Array(Math.max(0, 8 - pedagogicalData.value.attendanceIssues.length)).fill('<tr><td style="border:1px solid #000;height:25px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')
+
+  // Página 2: Problemas de Aprendizaje
+  const learningIssuesRows = pedagogicalData.value.attendanceIssues
+    .filter(s => manualData.value.learningIssuesIds.includes(s.id))
+    .map((item, idx) => `
+      <tr>
+        <td style="border:1px solid #000;padding:5px;">${idx + 1}</td>
+        <td style="border:1px solid #000;padding:5px;text-align:left;">${item.fullName}</td>
+        <td style="border:1px solid #000;padding:5px;">${item.phone}</td>
+      </tr>
+    `).join('')
+  const emptyLearning = Array(Math.max(0, 8 - manualData.value.learningIssuesIds.length)).fill('<tr><td style="border:1px solid #000;height:25px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')
+
+  // Página 2: Reprobados
+  const reprobadosRows = pedagogicalData.value.reprobados.map((item, idx) => `
+    <tr>
+      <td style="border:1px solid #000;padding:5px;">${idx + 1}</td>
+      <td style="border:1px solid #000;padding:5px;text-align:left;">${item.fullName}</td>
+      <td style="border:1px solid #000;padding:5px;">${item.phone}</td>
+    </tr>
+  `).join('')
+  const emptyReprobados = Array(Math.max(0, 8 - pedagogicalData.value.reprobados.length)).fill('<tr><td style="border:1px solid #000;height:25px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')
+
+  // Página 2: Avance Programático
+  const subjectRows = pedagogicalData.value.subjects.map(s => {
+    const data = manualData.value.subjectAvance[s.id] || { prog: '', avan: '', pend: '' }
+    const total = data.avan || '0'
+    return `
+      <tr>
+        <td style="border:1px solid #000;padding:5px;text-align:left;font-size:8pt;">${s.name.toUpperCase()}</td>
+        <td style="border:1px solid #000;padding:5px;">${data.prog}</td>
+        <td style="border:1px solid #000;padding:5px;">${data.avan}</td>
+        <td style="border:1px solid #000;padding:5px;">${data.pend}</td>
+        <td style="border:1px solid #000;padding:5px;font-weight:bold;">${total}%</td>
+      </tr>
+    `
+  }).join('')
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: letter; margin: 15mm; }
+    body { font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.3; color: #000; }
+    .page-break { page-break-before: always; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .header h1 { font-size: 14pt; text-decoration: underline; margin-bottom: 5px; }
+    .header h2 { font-size: 12pt; text-decoration: underline; margin-bottom: 15px; }
+    
+    .meta-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px; margin-bottom: 15px; }
+    .meta-item { border-bottom: 1px dotted #000; padding-bottom: 2px; }
+    .meta-item strong { font-weight: bold; }
+    
+    table.full-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 9pt; margin-bottom: 20px; }
+    table.full-table th { border: 1px solid #000; padding: 5px; background: #eee; text-transform: uppercase; }
+    table.full-table td { border: 1px solid #000; padding: 5px; }
+
+    .main-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; border: 1px solid #000; margin-bottom: 20px; }
+    .grid-col { border-right: 1px solid #000; min-height: 250px; }
+    .grid-col:last-child { border-right: none; }
+    .grid-header { font-weight: bold; text-align: center; padding: 5px; border-bottom: 1px solid #000; background: #eee; text-transform: uppercase; }
+    .grid-content { padding: 8px; white-space: pre-wrap; font-size: 9pt; }
+    
+    .footer { margin-top: 40px; display: flex; justify-content: space-around; }
+    .sign-block { text-align: center; width: 45%; }
+    .sign-line { border-top: 1px solid #000; margin-bottom: 5px; }
+    .section-title { font-weight: bold; text-align: center; font-size: 10pt; margin-bottom: 8px; text-transform: uppercase; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <!-- PAGINA 1 -->
+  <div class="header">
+    <h1>INFORME PEDAGOGICO</h1>
+    <h2>${selectedTrimester.value}º TRIMESTRE</h2>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-item"><strong>UNIDAD EDUCATIVA:</strong> ${settings.value.schoolName}</div>
+    <div class="meta-item"><strong>DIRECTORA:</strong> ${settings.value.directorName}</div>
+    <div class="meta-item"><strong>PROFESOR(A):</strong> ${settings.value.teacherName}</div>
+    <div class="meta-item"><strong>CURSO:</strong> ${courseName}</div>
+    <div class="meta-item"><strong>AREA:</strong> ${manualData.value.area || 'GENERAL'}</div>
+    <div class="meta-item"><strong>GESTIÓN:</strong> ${settings.value.year}</div>
+  </div>
+
+  <div class="meta-item" style="margin-bottom: 10px;"><strong>PORCENTAJE DE AVANCE GENERAL:</strong> ${manualData.value.avance || '..........'} %</div>
+  <div class="meta-item" style="margin-bottom: 20px;"><strong>PORCENTAJE DE APROVECHAMIENTO DEL ALUMNADO:</strong> ${manualData.value.aprovechamiento || '..........'} %</div>
+
+  <div style="display: flex; justify-content: space-between; margin-bottom: 15px; gap: 20px;">
+    <table style="width: 48%; border-collapse: collapse; font-size: 8pt; text-align: center;">
+      <thead><tr><th colspan="3" style="border:1px solid #000;">ALUMNOS INSCRITOS</th></tr><tr><th style="border:1px solid #000;">V</th><th style="border:1px solid #000;">M</th><th style="border:1px solid #000;">T</th></tr></thead>
+      <tbody><tr><td style="border:1px solid #000;">${pedagogicalData.value.stats.enrolled.males}</td><td style="border:1px solid #000;">${pedagogicalData.value.stats.enrolled.females}</td><td style="border:1px solid #000;">${pedagogicalData.value.stats.enrolled.total}</td></tr></tbody>
+    </table>
+    <table style="width: 48%; border-collapse: collapse; font-size: 8pt; text-align: center;">
+      <thead><tr><th colspan="3" style="border:1px solid #000;">ALUMNOS EFECTIVOS</th></tr><tr><th style="border:1px solid #000;">V</th><th style="border:1px solid #000;">M</th><th style="border:1px solid #000;">T</th></tr></thead>
+      <tbody><tr><td style="border:1px solid #000;">${pedagogicalData.value.stats.effective.males}</td><td style="border:1px solid #000;">${pedagogicalData.value.stats.effective.females}</td><td style="border:1px solid #000;">${pedagogicalData.value.stats.effective.total}</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="main-grid">
+    <div class="grid-col"><div class="grid-header">LOGROS</div><div class="grid-content">${manualData.value.logros}</div></div>
+    <div class="grid-col"><div class="grid-header">DIFICULTADES</div><div class="grid-content">${manualData.value.dificultades}</div></div>
+    <div class="grid-col"><div class="grid-header">SUGERENCIAS</div><div class="grid-content">${manualData.value.sugerencias}</div></div>
+  </div>
+
+  <div class="section-title">ALUMNOS QUE SIEMPRE LLEGAN ATRASADOS A CLASE O QUE FALTAN CONSECUTIVAMENTE</div>
+  <table class="full-table">
+    <thead><tr><th style="width: 40px;">Nº</th><th>NOMBRE COMPLETO</th><th style="width: 150px;">CELULAR</th></tr></thead>
+    <tbody>${attendanceRows}${emptyAttendance}</tbody>
+  </table>
+
+  <div class="footer">
+    <div class="sign-block"><div class="sign-line"></div><p><strong>${settings.value.teacherName}</strong></p><p>PROFESOR(A)</p></div>
+    <div class="sign-block"><div class="sign-line"></div><p><strong>${settings.value.directorName}</strong></p><p>DIRECTOR(A)</p></div>
+  </div>
+
+  <!-- PAGINA 2 -->
+  <div class="page-break"></div>
+  <div class="section-title">NÓMINA DE ALUMNOS CON PROBLEMA DE APRENDIZAJE Y DIFICULTADES LEVE</div>
+  <table class="full-table">
+    <thead><tr><th style="width: 40px;">Nº</th><th>NOMBRE COMPLETO</th><th style="width: 150px;">CELULAR</th></tr></thead>
+    <tbody>${learningIssuesRows}${emptyLearning}</tbody>
+  </table>
+
+  <div class="section-title">NÓMINA DE ALUMNOS REPROBADOS</div>
+  <table class="full-table">
+    <thead><tr><th style="width: 40px;">Nº</th><th>NOMBRE COMPLETO</th><th style="width: 150px;">CELULAR</th></tr></thead>
+    <tbody>${reprobadosRows}${emptyReprobados}</tbody>
+  </table>
+
+  <div class="section-title">AVANCE GENERAL TRIMESTRAL</div>
+  <table class="full-table" style="font-size: 8pt;">
+    <thead>
+      <tr>
+        <th>AREAS ASIGNATURAS</th>
+        <th style="width: 80px;">TEMAS PROGR. %</th>
+        <th style="width: 80px;">TEMAS AVANZ. %</th>
+        <th style="width: 80px;">TEMAS PEND. %</th>
+        <th style="width: 80px;">TOTAL PORC. %</th>
+      </tr>
+    </thead>
+    <tbody>${subjectRows}</tbody>
+  </table>
+
+  <div class="footer">
+    <div class="sign-block"><div class="sign-line"></div><p><strong>${settings.value.teacherName}</strong></p><p>PROFESOR(A)</p></div>
+    <div class="sign-block"><div class="sign-line"></div><p><strong>${settings.value.directorName}</strong></p><p>DIRECTOR(A)</p></div>
+  </div>
+
+  <script>window.onload = () => window.print()<\/script>
+</body>
+</html>`
+
+  const win = window.open('', '_blank', 'width=900,height=800')
+  win.document.write(html)
+  win.document.close()
+}
 </script>
 
 <template>
   <div class="reports-view">
-    <h1 class="page-title no-print">Generación de Boletines</h1>
+    <div class="tabs-header no-print">
+      <button @click="activeTab = 'bulletin'" :class="{ active: activeTab === 'bulletin' }">Boletines Individuales</button>
+      <button @click="activeTab = 'pedagogical'" :class="{ active: activeTab === 'pedagogical' }">Informe Pedagógico por Curso</button>
+    </div>
 
-    <div class="search-section glass-card no-print">
+    <div v-if="activeTab === 'bulletin'" class="search-section glass-card no-print">
       <div class="search-group">
         <label>Buscar Estudiante</label>
         <div class="search-input-wrapper">
@@ -234,6 +457,101 @@ const generatePDF = () => {
 
       <div v-if="error" class="error-toast">
         {{ error }}
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'pedagogical'" class="pedagogical-config glass-card no-print">
+      <div class="config-grid">
+        <div class="form-group">
+          <label>Curso</label>
+          <select v-model="selectedCourse" @change="fetchPedagogicalData" class="input-field">
+            <option value="">Seleccione un curso</option>
+            <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.level }} - {{ c.parallel }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Trimestre</label>
+          <select v-model="selectedTrimester" class="input-field">
+            <option :value="1">1º Trimestre</option>
+            <option :value="2">2º Trimestre</option>
+            <option :value="3">3º Trimestre</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Área (Opcional)</label>
+          <input v-model="manualData.area" type="text" class="input-field" placeholder="Ej: MATEMÁTICA" />
+        </div>
+      </div>
+
+      <div v-if="pedagogicalData" class="manual-fields mt-6">
+        <div class="form-row">
+          <div class="form-group">
+            <label>% Avance General</label>
+            <input v-model="manualData.avance" type="text" class="input-field" placeholder="100" />
+          </div>
+          <div class="form-group">
+            <label>% Aprovechamiento</label>
+            <input v-model="manualData.aprovechamiento" type="text" class="input-field" placeholder="85" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Logros</label>
+          <textarea v-model="manualData.logros" class="input-field" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Dificultades</label>
+          <textarea v-model="manualData.dificultades" class="input-field" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Sugerencias</label>
+          <textarea v-model="manualData.sugerencias" class="input-field" rows="3"></textarea>
+        </div>
+
+        <div class="learning-issues-selector glass-card p-4">
+          <h3 class="text-sm font-bold mb-2">Alumnos con problemas de aprendizaje (Leve)</h3>
+          <div class="issues-list grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+            <div v-for="s in pedagogicalData.attendanceIssues" :key="s.id" class="issue-item flex items-center gap-2">
+              <input type="checkbox" :id="'learn-'+s.id" :value="s.id" v-model="manualData.learningIssuesIds" />
+              <label :for="'learn-'+s.id" class="text-xs truncate cursor-pointer">{{ s.fullName }}</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="avance-subjects mt-4">
+          <h3 class="text-sm font-bold mb-2">Avance Programático por Materia</h3>
+          <div class="avance-table-wrapper overflow-x-auto">
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>Materia</th>
+                  <th>Prog %</th>
+                  <th>Avan %</th>
+                  <th>Pend %</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in pedagogicalData.subjects" :key="s.id">
+                  <td class="text-xs truncate max-w-[150px]">{{ s.name }}</td>
+                  <td><input v-model="manualData.subjectAvance[s.id].prog" class="mini-input" /></td>
+                  <td><input v-model="manualData.subjectAvance[s.id].avan" class="mini-input" /></td>
+                  <td><input v-model="manualData.subjectAvance[s.id].pend" class="mini-input" /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div class="actions mt-4">
+          <button @click="printPedagogical" class="btn btn-primary w-full">
+            <Printer :size="20" />
+            Generar e Imprimir Informe Pedagógico (2 Páginas)
+          </button>
+        </div>
+      </div>
+
+      <div v-if="loading" class="searching-overlay">
+        <Loader2 class="animate-spin" :size="32" />
+        <p>Cargando datos del curso...</p>
       </div>
     </div>
 
@@ -322,6 +640,101 @@ const generatePDF = () => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+.tabs-header {
+  display: flex;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.tabs-header button {
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tabs-header button.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.pedagogical-config {
+  padding: 2rem;
+  max-width: 800px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+}
+
+.manual-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+textarea.input-field {
+  resize: vertical;
+}
+
+.mt-6 { margin-top: 1.5rem; }
+.mt-4 { margin-top: 1rem; }
+.mb-2 { margin-bottom: 0.5rem; }
+.p-4 { padding: 1rem; }
+.w-full { width: 100%; }
+.text-xs { font-size: 0.75rem; }
+.text-sm { font-size: 0.875rem; }
+.font-bold { font-weight: 700; }
+.grid { display: grid; }
+.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gap-2 { gap: 0.5rem; }
+.max-h-40 { max-height: 10rem; }
+.overflow-y-auto { overflow-y: auto; }
+.items-center { align-items: center; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mini-table th, .mini-table td {
+  border: 1px solid var(--border);
+  padding: 0.25rem;
+  text-align: center;
+}
+
+.mini-table th { font-size: 0.7rem; background: rgba(99, 102, 241, 0.05); }
+
+.mini-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  text-align: center;
+  font-size: 0.8rem;
+  padding: 0.125rem;
+}
+
+.mini-input:focus {
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
 }
 
 .search-section {

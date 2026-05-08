@@ -49,6 +49,16 @@ export class GradesController {
     return this.gradesService.getDimensionScores(courseId, subjectId, period, req.user.schoolId);
   }
 
+  @Get('final')
+  getFinalGrades(
+    @Query('courseId', ParseIntPipe) courseId: number,
+    @Query('subjectId', ParseIntPipe) subjectId: number,
+    @Query('period', ParseIntPipe) period: number,
+    @Req() req
+  ) {
+    return this.gradesService.getGradesBySubject(courseId, subjectId, period, req.user.schoolId);
+  }
+
   @Post('register')
   async register(@Body() dto: CreateGradeDto, @Req() req) {
     return this.gradesService.registerGrade(dto, req.user.userId, req.user.schoolId);
@@ -88,5 +98,13 @@ export class GradesController {
     @Req() req
   ) {
     return this.gradesService.getStudentAcademicReport(studentId, year, req.user.schoolId);
+  }
+
+  @Get('pedagogical/:courseId')
+  async getPedagogicalReport(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Req() req
+  ) {
+    return this.gradesService.getPedagogicalReportData(courseId, req.user.schoolId);
   }
 }

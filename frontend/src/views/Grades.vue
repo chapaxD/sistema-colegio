@@ -21,6 +21,7 @@ const loading = ref(false)
 const generatingPDF = ref(false)
 const saving = ref(false)
 const syncDimensions = ref(false)
+const isDirectMode = ref(false)
 const message = ref({ text: '', type: '' })
 
 const settings = ref({
@@ -52,16 +53,18 @@ const fetchData = async () => {
   
   loading.value = true
   try {
-    const [studentsRes, evalsRes, dimsRes, schoolRes, assignmentRes] = await Promise.all([
+    const [studentsRes, evalsRes, dimsRes, gradesRes, schoolRes, assignmentRes] = await Promise.all([
       api.get('/students'),
       api.get(`/grades/evaluations?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`),
       api.get(`/grades/dimensions?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`),
+      api.get(`/grades/final?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`),
       api.get('/schools/my'),
       api.get(`/academic/assignments/lookup?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}`)
     ])
     
     evaluations.value = evalsRes.data
     dimensionScores.value = dimsRes.data
+    const finalGrades = gradesRes.data
 
     // Actualizar configuración institucional dinámicamente para los reportes
     if (schoolRes.data) {
@@ -91,6 +94,7 @@ const fetchData = async () => {
     ).map(s => {
       const enrollment = s.enrollments.find(e => e.courseId === parseInt(selectedCourse.value))
       const dims = dimensionScores.value.find(d => d.enrollmentId === enrollment.id) || { ser: 0, autoSer: 0 }
+      const gradeObj = finalGrades.find(g => g.enrollmentId === enrollment.id)
       
       return {
         id: s.id,
@@ -100,6 +104,7 @@ const fetchData = async () => {
         fullName: `${s.lastName} ${s.firstName}`,
         ser: dims.ser,
         autoSer: dims.autoSer,
+        finalScore: gradeObj ? gradeObj.score : 0,
         evaluations: evaluations.value.map(ev => {
           const scoreObj = ev.scores.find(sc => sc.enrollmentId === enrollment.id)
           return {
@@ -159,39 +164,37 @@ const removeEvaluation = async (dimension) => {
 const saveAll = async () => {
   saving.value = true
   try {
-    const promises = []
-    
     for (const s of students.value) {
-      // 1. Guardar Dimensiones Fijas (AUTO)
-      promises.push(api.post('/grades/dimensions', {
-        enrollmentId: s.enrollmentId,
-        subjectId: parseInt(selectedSubject.value),
-        period: selectedTrimester.value,
-        ser: s.ser,
-        autoSer: s.autoSer,
-        syncAll: syncDimensions.value
-      }))
-      
-      // 2. Guardar Notas de Evaluaciones (SER, SABER, HACER)
-      for (const ev of s.evaluations) {
-        promises.push(api.post('/grades/evaluations/score', {
-          evaluationId: ev.evaluationId,
+      if (!isDirectMode.value) {
+        // 1. Guardar Dimensiones Fijas (AUTO)
+        await api.post('/grades/dimensions', {
           enrollmentId: s.enrollmentId,
-          score: ev.score,
-          syncAll: syncDimensions.value && ev.dimension === 'SER'
-        }))
+          subjectId: parseInt(selectedSubject.value),
+          period: selectedTrimester.value,
+          ser: s.ser,
+          autoSer: s.autoSer,
+          syncAll: syncDimensions.value
+        })
+        
+        // 2. Guardar Notas de Evaluaciones (SER, SABER, HACER)
+        for (const ev of s.evaluations) {
+          await api.post('/grades/evaluations/score', {
+            evaluationId: ev.evaluationId,
+            enrollmentId: s.enrollmentId,
+            score: ev.score,
+            syncAll: syncDimensions.value && ev.dimension === 'SER'
+          })
+        }
       }
 
       // 3. Guardar Calificación Final Trimestral
-      promises.push(api.post('/grades/register', {
+      await api.post('/grades/register', {
         enrollmentId: s.enrollmentId,
         subjectId: parseInt(selectedSubject.value),
         period: selectedTrimester.value,
         score: getFinalScore(s)
-      }))
+      })
     }
-    
-    await Promise.all(promises)
     message.value = { text: 'Registro guardado exitosamente', type: 'success' }
     setTimeout(() => message.value = { text: '', type: '' }, 3000)
     fetchData() 
@@ -231,6 +234,7 @@ const getAutoAvg = (student) => {
 }
 
 const getFinalScore = (student) => {
+  if (isDirectMode.value) return student.finalScore
   return getSerAvg(student) + getSaberAvg(student) + getHacerAvg(student) + getAutoAvg(student)
 }
 
@@ -407,7 +411,13 @@ const generatePDF = () => {
       <div class="filter-group" style="width: auto; flex-direction: row; align-items: center; gap: 0.5rem; padding-bottom: 0.5rem;">
         <input type="checkbox" v-model="syncDimensions" id="sync-dim" />
         <label for="sync-dim" style="font-size: 0.8rem; cursor: pointer; color: var(--primary);">
-          Sincronizar SER/AUTO con todas las materias
+          Sincronizar SER/AUTO
+        </label>
+      </div>
+      <div class="filter-group" style="width: auto; flex-direction: row; align-items: center; gap: 0.5rem; padding-bottom: 0.5rem;">
+        <input type="checkbox" v-model="isDirectMode" id="direct-mode" />
+        <label for="direct-mode" style="font-size: 0.8rem; cursor: pointer; color: var(--primary); font-weight: bold;">
+          MODO DIRECTO (Solo Nota Final)
         </label>
       </div>
       <div class="action-buttons">
@@ -438,25 +448,29 @@ const generatePDF = () => {
           <thead>
             <tr>
               <th rowspan="2" class="sticky-col">Nº Apellidos y Nombres</th>
-              <th :colspan="serEvals.length === 0 ? 2 : serEvals.length + 1" class="dim-header ser">
-                SER (10)
-                <button @click="addEvaluation('SER')" class="add-col-btn"><Plus :size="14" /></button>
-                <button @click="removeEvaluation('SER')" class="add-col-btn minus" v-if="serEvals.length > 0"><Minus :size="14" /></button>
+              <template v-if="!isDirectMode">
+                <th :colspan="serEvals.length === 0 ? 2 : serEvals.length + 1" class="dim-header ser">
+                  SER (10)
+                  <button @click="addEvaluation('SER')" class="add-col-btn"><Plus :size="14" /></button>
+                  <button @click="removeEvaluation('SER')" class="add-col-btn minus" v-if="serEvals.length > 0"><Minus :size="14" /></button>
+                </th>
+                <th :colspan="saberEvals.length === 0 ? 2 : saberEvals.length + 1" class="dim-header saber">
+                  SABER (45) 
+                  <button @click="addEvaluation('SABER')" class="add-col-btn"><Plus :size="14" /></button>
+                  <button @click="removeEvaluation('SABER')" class="add-col-btn minus" v-if="saberEvals.length > 0"><Minus :size="14" /></button>
+                </th>
+                <th :colspan="hacerEvals.length === 0 ? 2 : hacerEvals.length + 1" class="dim-header hacer">
+                  HACER (40)
+                  <button @click="addEvaluation('HACER')" class="add-col-btn"><Plus :size="14" /></button>
+                  <button @click="removeEvaluation('HACER')" class="add-col-btn minus" v-if="hacerEvals.length > 0"><Minus :size="14" /></button>
+                </th>
+                <th class="dim-header auto">AUTOEVALUACIÓN (5)</th>
+              </template>
+              <th :rowspan="isDirectMode ? 2 : 1" class="final-header" :style="{ width: isDirectMode ? '150px' : 'auto' }">
+                CALIFICACIÓN TRIMESTRAL
               </th>
-              <th :colspan="saberEvals.length === 0 ? 2 : saberEvals.length + 1" class="dim-header saber">
-                SABER (45) 
-                <button @click="addEvaluation('SABER')" class="add-col-btn"><Plus :size="14" /></button>
-                <button @click="removeEvaluation('SABER')" class="add-col-btn minus" v-if="saberEvals.length > 0"><Minus :size="14" /></button>
-              </th>
-              <th :colspan="hacerEvals.length === 0 ? 2 : hacerEvals.length + 1" class="dim-header hacer">
-                HACER (40)
-                <button @click="addEvaluation('HACER')" class="add-col-btn"><Plus :size="14" /></button>
-                <button @click="removeEvaluation('HACER')" class="add-col-btn minus" v-if="hacerEvals.length > 0"><Minus :size="14" /></button>
-              </th>
-              <th class="dim-header auto">AUTOEVALUACIÓN (5)</th>
-              <th rowspan="2" class="final-header">CALIFICACIÓN TRIMESTRAL</th>
             </tr>
-            <tr>
+            <tr v-if="!isDirectMode">
               <th v-if="serEvals.length === 0" class="sub-col">Puntaje</th>
               <th v-for="ev in serEvals" :key="ev.id" class="sub-col rotated">
                 <div class="vertical-text">{{ ev.title }}</div>
@@ -482,29 +496,35 @@ const generatePDF = () => {
               <td class="sticky-col name-cell">
                 <span class="index">{{ index + 1 }}</span> {{ s.fullName }}
               </td>
-              <td v-if="serEvals.length === 0">
-                <input v-model.number="s.ser" type="number" min="0" max="10" @input="clampValue(s, 'ser', 10)" class="cell-input" />
+              <template v-if="!isDirectMode">
+                <td v-if="serEvals.length === 0">
+                  <input v-model.number="s.ser" type="number" min="0" max="10" @input="clampValue(s, 'ser', 10)" class="cell-input" />
+                </td>
+                <td v-for="ev in serEvals" :key="ev.id">
+                  <input v-model.number="s.evaluations.find(e => e.evaluationId === ev.id).score" type="number" min="0" max="10" @input="clampValue(s.evaluations.find(e => e.evaluationId === ev.id), 'score', 10)" class="cell-input" />
+                </td>
+                <td class="avg-val">{{ getSerAvg(s) }}</td>
+                <td v-for="ev in saberEvals" :key="ev.id">
+                  <input v-model.number="s.evaluations.find(e => e.evaluationId === ev.id).score" type="number" min="0" max="45" @input="clampValue(s.evaluations.find(e => e.evaluationId === ev.id), 'score', 45)" class="cell-input" />
+                </td>
+                <td v-if="saberEvals.length === 0">
+                  <input type="number" disabled class="cell-input" placeholder="-" />
+                </td>
+                <td class="avg-val saber-avg">{{ getSaberAvg(s) }}</td>
+                <td v-for="ev in hacerEvals" :key="ev.id">
+                  <input v-model.number="s.evaluations.find(e => e.evaluationId === ev.id).score" type="number" min="0" max="40" @input="clampValue(s.evaluations.find(e => e.evaluationId === ev.id), 'score', 40)" class="cell-input" />
+                </td>
+                <td v-if="hacerEvals.length === 0">
+                  <input type="number" disabled class="cell-input" placeholder="-" />
+                </td>
+                <td class="avg-val hacer-avg">{{ getHacerAvg(s) }}</td>
+                <td><input v-model.number="s.autoSer" type="number" min="0" max="5" @input="clampValue(s, 'autoSer', 5)" class="cell-input" /></td>
+              </template>
+              
+              <td v-if="isDirectMode">
+                <input v-model.number="s.finalScore" type="number" min="0" max="100" @input="clampValue(s, 'finalScore', 100)" class="cell-input" style="width: 80px; font-size: 1.2rem;" />
               </td>
-              <td v-for="ev in serEvals" :key="ev.id">
-                <input v-model.number="s.evaluations.find(e => e.evaluationId === ev.id).score" type="number" min="0" max="10" @input="clampValue(s.evaluations.find(e => e.evaluationId === ev.id), 'score', 10)" class="cell-input" />
-              </td>
-              <td class="avg-val">{{ getSerAvg(s) }}</td>
-              <td v-for="ev in saberEvals" :key="ev.id">
-                <input v-model.number="s.evaluations.find(e => e.evaluationId === ev.id).score" type="number" min="0" max="45" @input="clampValue(s.evaluations.find(e => e.evaluationId === ev.id), 'score', 45)" class="cell-input" />
-              </td>
-              <td v-if="saberEvals.length === 0">
-                <input type="number" disabled class="cell-input" placeholder="-" />
-              </td>
-              <td class="avg-val saber-avg">{{ getSaberAvg(s) }}</td>
-              <td v-for="ev in hacerEvals" :key="ev.id">
-                <input v-model.number="s.evaluations.find(e => e.evaluationId === ev.id).score" type="number" min="0" max="40" @input="clampValue(s.evaluations.find(e => e.evaluationId === ev.id), 'score', 40)" class="cell-input" />
-              </td>
-              <td v-if="hacerEvals.length === 0">
-                <input type="number" disabled class="cell-input" placeholder="-" />
-              </td>
-              <td class="avg-val hacer-avg">{{ getHacerAvg(s) }}</td>
-              <td><input v-model.number="s.autoSer" type="number" min="0" max="5" @input="clampValue(s, 'autoSer', 5)" class="cell-input" /></td>
-              <td class="final-score" :class="{ danger: getFinalScore(s) < 51 }">
+              <td v-else class="final-score" :class="{ danger: getFinalScore(s) < 51 }">
                 {{ getFinalScore(s) }}
               </td>
             </tr>

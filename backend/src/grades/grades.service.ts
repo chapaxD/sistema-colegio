@@ -99,24 +99,33 @@ export class GradesService {
     });
     if (!evalItem || evalItem.course.schoolId !== schoolId) throw new BadRequestException('No autorizado');
 
-    if (dto.syncAll) {
+    if (dto.syncAll && evalItem.dimension === 'SER') {
       const subjects = await this.prisma.subject.findMany({ where: { schoolId } });
       const operations: any[] = [];
 
       for (const s of subjects) {
-        const targetEval = await this.prisma.evaluation.upsert({
+        // Buscar si ya existe una evaluación con el mismo título (limpiando espacios)
+        let targetEval = await this.prisma.evaluation.findFirst({
           where: { 
-            id: (await this.prisma.evaluation.findFirst({
-              where: { title: evalItem.title, subjectId: s.id, period: evalItem.period, courseId: evalItem.courseId }
-            }))?.id || -1
-          },
-          update: { score: dto.score } as any,
-          create: { title: evalItem.title, dimension: evalItem.dimension, subjectId: s.id, period: evalItem.period, courseId: evalItem.courseId }
-        }).catch(() => {
-          return this.prisma.evaluation.create({
-            data: { title: evalItem.title, dimension: evalItem.dimension, subjectId: s.id, period: evalItem.period, courseId: evalItem.courseId }
-          });
+            title: evalItem.title.trim(), 
+            subjectId: s.id, 
+            period: evalItem.period, 
+            courseId: evalItem.courseId 
+          }
         });
+
+        // Si no existe, crearla con el título limpio
+        if (!targetEval) {
+          targetEval = await this.prisma.evaluation.create({
+            data: { 
+              title: evalItem.title.trim(), 
+              dimension: evalItem.dimension, 
+              subjectId: s.id, 
+              period: evalItem.period, 
+              courseId: evalItem.courseId 
+            }
+          });
+        }
 
         operations.push(this.prisma.evaluationScore.upsert({
           where: { evaluationId_enrollmentId: { evaluationId: targetEval.id, enrollmentId: dto.enrollmentId } },
@@ -136,7 +145,11 @@ export class GradesService {
         },
       },
       update: { score: dto.score },
-      create: dto,
+      create: {
+        evaluationId: dto.evaluationId,
+        enrollmentId: dto.enrollmentId,
+        score: dto.score
+      },
     });
   }
 
@@ -171,6 +184,16 @@ export class GradesService {
       },
       update: { score: dto.score },
       create: dto,
+    });
+  }
+
+  async getGradesBySubject(courseId: number, subjectId: number, period: number, schoolId: number) {
+    return this.prisma.grade.findMany({
+      where: {
+        subjectId,
+        period,
+        enrollment: { courseId, schoolId }
+      }
     });
   }
 
@@ -349,5 +372,78 @@ export class GradesService {
         status: avg >= 51 ? 'APROBADO' : 'REPROBADO'
       };
     }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }
+
+  async getPedagogicalReportData(courseId: number, schoolId: number) {
+    console.log(`Generating Pedagogical Report for Course: ${courseId}, School: ${schoolId}`);
+    try {
+      if (!courseId || !schoolId) {
+        throw new Error('CourseId or SchoolId is missing');
+      }
+
+      const students = await this.prisma.student.findMany({
+        where: {
+          schoolId: Number(schoolId),
+          enrollments: { some: { courseId: Number(courseId) } }
+        },
+        include: {
+          enrollments: {
+            where: { courseId: Number(courseId) },
+            include: {
+              attendances: true,
+              grades: true
+            }
+          }
+        }
+      });
+
+      // Importante: Casteamos a any para que TS permita el acceso a gender/phone
+      // mientras se sincronizan los tipos generados de Prisma.
+      const studentList = students as any[];
+
+      const stats = {
+        enrolled: {
+          males: studentList.filter(s => s.gender === 'M').length,
+          females: studentList.filter(s => s.gender === 'F').length,
+          total: studentList.length
+        },
+        effective: {
+          males: studentList.filter(s => s.gender === 'M' && s.isActive).length,
+          females: studentList.filter(s => s.gender === 'F' && s.isActive).length,
+          total: studentList.filter(s => s.isActive).length
+        }
+      };
+
+      const attendanceIssues = studentList.map(s => {
+        const enrollment = s.enrollments?.[0];
+        if (!enrollment) return null;
+        const lates = (enrollment.attendances || []).filter(a => a.status === 'LATE').length;
+        const absences = (enrollment.attendances || []).filter(a => a.status === 'ABSENT').length;
+        if (lates > 2 || absences > 1) {
+          return { id: s.id, fullName: `${s.lastName} ${s.firstName}`, phone: s.phone || 'S/N', lates, absences };
+        }
+        return null;
+      }).filter(Boolean);
+
+      const reprobados = studentList.map(s => {
+        const enrollment = s.enrollments?.[0];
+        if (!enrollment || !enrollment.grades || enrollment.grades.length === 0) return null;
+        const avg = enrollment.grades.reduce((acc, curr) => acc + curr.score, 0) / enrollment.grades.length;
+        if (avg < 51) {
+          return { id: s.id, fullName: `${s.lastName} ${s.firstName}`, phone: s.phone || 'S/N', average: Math.round(avg) };
+        }
+        return null;
+      }).filter(Boolean);
+
+      const subjects = await this.prisma.subject.findMany({
+        where: { schoolId: Number(schoolId) },
+        orderBy: { name: 'asc' }
+      });
+
+      return { stats, attendanceIssues, reprobados, subjects };
+    } catch (err) {
+      console.error('FATAL ERROR in getPedagogicalReportData:', err.message);
+      throw err;
+    }
   }
 }
