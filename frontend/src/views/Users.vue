@@ -8,7 +8,6 @@ const loading = ref(false)
 const saving = ref(false)
 const newUser = ref({
   email: '',
-  password: '',
   role: 'TEACHER',
   firstName: '',
   lastName: ''
@@ -32,7 +31,7 @@ const registerUser = async () => {
   saving.value = true
   try {
     await api.post('/users', newUser.value)
-    newUser.value = { email: '', password: '', role: 'TEACHER', firstName: '', lastName: '' }
+    newUser.value = { email: '', role: 'TEACHER', firstName: '', lastName: '' }
     fetchData()
   } catch (err) {
     alert(err.response?.data?.message || 'Error al registrar usuario')
@@ -74,10 +73,7 @@ const deleteUser = async (id) => {
             </div>
           </div>
 
-          <div class="form-group">
-            <label>Contraseña</label>
-            <input v-model="newUser.password" type="password" placeholder="••••••••" class="input-field" required />
-          </div>
+
 
           <div class="form-group">
             <label>Rol de Usuario</label>
@@ -96,6 +92,14 @@ const deleteUser = async (id) => {
               <label>Apellidos</label>
               <input v-model="newUser.lastName" type="text" placeholder="Ej: Pérez" class="input-field" required />
             </div>
+          </div>
+
+          <div class="info-note">
+            <p>La contraseña se asignará automáticamente según el rol:</p>
+            <ul>
+              <li><strong>ADMIN:</strong> admin123</li>
+              <li><strong>DOCENTE:</strong> profe123</li>
+            </ul>
           </div>
 
           <button type="submit" class="btn btn-primary w-full" :disabled="saving">
@@ -171,6 +175,29 @@ const deleteUser = async (id) => {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+.info-note {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.info-note p {
+  margin-bottom: 0.25rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.info-note ul {
+  list-style: none;
+  padding-left: 0.5rem;
+}
+
+.info-note li {
+  color: var(--text-muted);
 }
 
 .input-with-icon {

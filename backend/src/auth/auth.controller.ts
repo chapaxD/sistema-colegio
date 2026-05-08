@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { JwtAuthGuard } from './jwt-auth.guard.js';
 
 @Controller('auth')
 export class AuthController {
@@ -15,5 +16,11 @@ export class AuthController {
   async seed() {
     await this.authService.seedAdmin();
     return { message: 'Seed executed' };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-password')
+  async changePassword(@Body('password') password: string, @Req() req) {
+    return this.authService.changePassword(req.user.userId, password);
   }
 }

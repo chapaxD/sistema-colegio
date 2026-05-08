@@ -1,10 +1,12 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { RouterView, RouterLink, useRoute } from 'vue-router'
+import api from './api'
 import { useAuthStore } from './stores/auth'
 import { 
   LayoutDashboard, Users, BookOpen, FileText, Settings, 
-  LogOut, CalendarCheck, Sun, Moon, Menu, X, User as UserIcon, Building, ShieldCheck
+  LogOut, CalendarCheck, Sun, Moon, Menu, X, User as UserIcon, Building, ShieldCheck,
+  ShieldAlert, Clock
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -28,9 +30,42 @@ watch(() => route.path, () => {
   isSidebarOpen.value = false
 })
 
-onMounted(() => {
+onMounted(async () => {
   const theme = isDark.value ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
+
+  // Refrescar estado de licencia si no es super admin
+  if (authStore.isAuthenticated && authStore.user?.role !== 'SUPER_ADMIN') {
+    try {
+      const res = await api.get('/schools/my')
+      if (res.data) {
+        authStore.updateUser({
+          licenseExpiry: res.data.licenseExpiry,
+          licenseStatus: res.data.licenseStatus
+        })
+      }
+    } catch (err) {
+      console.error('Error al refrescar estado del colegio', err)
+    }
+  }
+})
+
+const licenseDays = computed(() => {
+  if (authStore.user?.role === 'SUPER_ADMIN') return null
+  if (!authStore.user?.licenseExpiry) return null
+  
+  const expiry = new Date(authStore.user.licenseExpiry)
+  const today = new Date()
+  const diff = expiry.getTime() - today.getTime()
+  return Math.ceil(diff / (1000 * 3600 * 24))
+})
+
+const licenseStatus = computed(() => {
+  if (authStore.user?.licenseStatus === 'SUSPENDED') return 'suspended'
+  if (licenseDays.value === null) return 'active'
+  if (licenseDays.value < 0) return 'expired'
+  if (licenseDays.value <= 15) return 'warning'
+  return 'active'
 })
 </script>
 
@@ -56,44 +91,48 @@ onMounted(() => {
           <LayoutDashboard :size="20" />
           <span>Dashboard</span>
         </RouterLink>
-        <RouterLink to="/estudiantes" class="nav-item" active-class="active">
-          <Users :size="20" />
-          <span>Estudiantes</span>
-        </RouterLink>
+        <template v-if="authStore.user?.role !== 'SUPER_ADMIN'">
+          <RouterLink to="/estudiantes" class="nav-item" active-class="active">
+            <Users :size="20" />
+            <span>Estudiantes</span>
+          </RouterLink>
 
-        <!-- Secciones de Docente -->
-        <RouterLink to="/asistencia" class="nav-item" active-class="active">
-          <CalendarCheck :size="20" />
-          <span>Asistencia</span>
-        </RouterLink>
-        <RouterLink to="/notas" class="nav-item" active-class="active">
-          <BookOpen :size="20" />
-          <span>Notas</span>
-        </RouterLink>
-        <RouterLink to="/reportes" class="nav-item" active-class="active">
-          <FileText :size="20" />
-          <span>Reportes</span>
-        </RouterLink>
-        <RouterLink to="/centralizadores" class="nav-item" active-class="active">
-          <FileText :size="20" />
-          <span>Centralizadores</span>
-        </RouterLink>
+          <!-- Secciones de Docente -->
+          <template v-if="authStore.user?.role === 'TEACHER'">
+            <RouterLink to="/asistencia" class="nav-item" active-class="active">
+              <CalendarCheck :size="20" />
+              <span>Asistencia</span>
+            </RouterLink>
+            <RouterLink to="/notas" class="nav-item" active-class="active">
+              <BookOpen :size="20" />
+              <span>Notas</span>
+            </RouterLink>
+          </template>
+          <RouterLink to="/reportes" class="nav-item" active-class="active">
+            <FileText :size="20" />
+            <span>Reportes</span>
+          </RouterLink>
+          <RouterLink to="/centralizadores" class="nav-item" active-class="active">
+            <FileText :size="20" />
+            <span>Centralizadores</span>
+          </RouterLink>
 
-        <!-- Secciones de Administrador -->
-        <RouterLink v-if="authStore.user?.role === 'ADMIN'" to="/usuarios" class="nav-item" active-class="active">
-          <Settings :size="20" />
-          <span>Usuarios</span>
-        </RouterLink>
+          <!-- Secciones de Administrador -->
+          <RouterLink v-if="authStore.user?.role === 'ADMIN'" to="/usuarios" class="nav-item" active-class="active">
+            <Settings :size="20" />
+            <span>Usuarios</span>
+          </RouterLink>
 
-        <RouterLink to="/academico" class="nav-item" active-class="active">
-          <component :is="authStore.user?.role === 'ADMIN' ? Settings : UserIcon" :size="20" />
-          <span>{{ authStore.user?.role === 'ADMIN' ? 'Configuración' : 'Mi Perfil' }}</span>
-        </RouterLink>
+          <RouterLink to="/academico" class="nav-item" active-class="active">
+            <component :is="authStore.user?.role === 'ADMIN' ? Settings : UserIcon" :size="20" />
+            <span>{{ authStore.user?.role === 'ADMIN' ? 'Configuración' : 'Mi Perfil' }}</span>
+          </RouterLink>
 
-        <RouterLink to="/colegio" class="nav-item" active-class="active">
-          <Building :size="20" />
-          <span>Perfil del Colegio</span>
-        </RouterLink>
+          <RouterLink to="/colegio" class="nav-item" active-class="active">
+            <Building :size="20" />
+            <span>Perfil del Colegio</span>
+          </RouterLink>
+        </template>
 
         <!-- Secciones de Super Admin -->
         <div v-if="authStore.user?.role === 'SUPER_ADMIN'" class="nav-section-title">ADMINISTRACIÓN GLOBAL</div>
@@ -118,6 +157,25 @@ onMounted(() => {
 
     <!-- Main Content -->
     <main class="main-content" :class="{ 'full-width': $route.name === 'login' }">
+      <!-- Banner de Licencia -->
+      <div v-if="licenseStatus !== 'active' && authStore.user?.role !== 'SUPER_ADMIN' && $route.name !== 'login'" 
+           class="license-banner" :class="licenseStatus">
+        <div class="banner-content">
+          <ShieldAlert v-if="licenseStatus === 'expired' || licenseStatus === 'suspended'" :size="18" />
+          <Clock v-else :size="18" />
+          
+          <div class="banner-text">
+            <strong v-if="licenseStatus === 'suspended'">ACCESO RESTRINGIDO:</strong>
+            <strong v-else-if="licenseStatus === 'expired'">SISTEMA VENCIDO:</strong>
+            <strong v-else>AVISO DE VENCIMIENTO:</strong>
+            
+            <span v-if="licenseStatus === 'suspended'"> Su institución ha sido suspendida. Contacte al administrador.</span>
+            <span v-else-if="licenseStatus === 'expired'"> La licencia de su institución ha expirado. Por favor, regularice su suscripción.</span>
+            <span v-else> Su suscripción vence en {{ licenseDays }} días.</span>
+          </div>
+        </div>
+      </div>
+
       <header v-if="$route.name !== 'login'" class="top-bar glass-card">
         <div class="header-left">
           <button class="menu-btn mobile-only" @click="toggleSidebar">
@@ -135,8 +193,21 @@ onMounted(() => {
         </div>
       </header>
       
-      <div class="content-wrapper">
+      <div class="content-wrapper" :class="{ 'blur-content': licenseStatus === 'expired' || licenseStatus === 'suspended' }">
         <RouterView />
+
+        <!-- Bloqueo de pantalla si expiró -->
+        <div v-if="(licenseStatus === 'expired' || licenseStatus === 'suspended') && $route.name !== 'login'" class="block-overlay">
+          <div class="glass-card lock-card">
+            <ShieldAlert :size="48" class="text-danger" />
+            <h2>Acceso Bloqueado</h2>
+            <p v-if="licenseStatus === 'suspended'">Este colegio ha sido suspendido por el administrador global.</p>
+            <p v-else>La licencia de este sistema ha vencido. Contacte al proveedor para renovar su suscripción.</p>
+            <button @click="authStore.logout()" class="btn btn-primary w-full">
+              <LogOut :size="18" /> Salir del Sistema
+            </button>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -331,6 +402,76 @@ onMounted(() => {
 
 .content-wrapper {
   flex: 1;
+  position: relative;
+}
+
+/* License Banner */
+.license-banner {
+  padding: 0.6rem 1rem;
+  display: flex;
+  justify-content: center;
+  font-size: 0.85rem;
+  z-index: 1000;
+}
+
+.license-banner.warning {
+  background: #f59e0b;
+  color: #000;
+}
+
+.license-banner.expired, .license-banner.suspended {
+  background: #ef4444;
+  color: white;
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.banner-text strong {
+  margin-right: 0.25rem;
+}
+
+/* Block Overlay */
+.blur-content {
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+.block-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.lock-card {
+  max-width: 400px;
+  text-align: center;
+  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  background: var(--bg-card);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.lock-card h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.lock-card p {
+  color: var(--text-muted);
+  margin: 0;
 }
 
 .mobile-only { display: none; }

@@ -43,7 +43,9 @@ export class AuthService {
         email: user.email,
         role: user.role,
         schoolId: user.schoolId,
-        schoolName: user.school.name
+        schoolName: user.school.name,
+        licenseExpiry: user.school.licenseExpiry,
+        licenseStatus: user.school.licenseStatus
       },
     };
   }
@@ -80,5 +82,13 @@ export class AuthService {
       }
     });
     console.log('✅ Super Admin configurado: admin@colegio.com / admin123');
+  }
+
+  async changePassword(userId: number, newPass: string) {
+    const hashedPassword = await bcrypt.hash(newPass, 10);
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword }
+    });
   }
 }

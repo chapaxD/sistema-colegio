@@ -24,6 +24,8 @@ const editingItem = ref(null) // { type: 'course'|'subject', id, data }
 const teacherProfile = ref({ firstName: '', lastName: '' })
 const promotionData = ref({ sourceCourseId: '', sourceYearId: '', targetCourseId: '', targetYearId: '' })
 const promoting = ref(false)
+const passwordData = ref({ newPassword: '', confirmPassword: '' })
+const changingPassword = ref(false)
 
 const schoolSettings = ref({
   schoolName: '',
@@ -269,6 +271,24 @@ const executePromotion = async () => {
     alert(msg)
   } finally {
     promoting.value = false
+  }
+}
+
+const changePassword = async () => {
+  if (!passwordData.value.newPassword || passwordData.value.newPassword !== passwordData.value.confirmPassword) {
+    alert('Las contraseñas no coinciden o están vacías')
+    return
+  }
+
+  changingPassword.value = true
+  try {
+    await api.patch('/auth/change-password', { password: passwordData.value.newPassword })
+    alert('Contraseña actualizada correctamente')
+    passwordData.value = { newPassword: '', confirmPassword: '' }
+  } catch (err) {
+    alert('Error al cambiar la contraseña')
+  } finally {
+    changingPassword.value = false
   }
 }
 </script>
@@ -547,8 +567,24 @@ const executePromotion = async () => {
           </form>
         </div>
         <div class="list-section glass-card">
-          <h3>Vista Previa</h3>
-          <div class="preview-box">
+          <h3>Seguridad de la Cuenta</h3>
+          <p class="section-desc">Cambie su contraseña de acceso al sistema.</p>
+          <form @submit.prevent="changePassword" class="academic-form">
+            <div class="form-group">
+              <label>Nueva Contraseña</label>
+              <input v-model="passwordData.newPassword" type="password" class="input-field" placeholder="••••••••" required />
+            </div>
+            <div class="form-group">
+              <label>Confirmar Contraseña</label>
+              <input v-model="passwordData.confirmPassword" type="password" class="input-field" placeholder="••••••••" required />
+            </div>
+            <button type="submit" class="btn btn-outline w-full" :disabled="changingPassword">
+              <Loader2 v-if="changingPassword" class="animate-spin" :size="18" />
+              <span v-else>Actualizar Contraseña</span>
+            </button>
+          </form>
+          
+          <div class="preview-box mt-6">
             <p><strong>Docente:</strong> {{ teacherProfile.lastName }} {{ teacherProfile.firstName }}</p>
             <p><strong>Estado:</strong> Activo</p>
           </div>

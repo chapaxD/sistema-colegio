@@ -20,7 +20,8 @@ export class UsersService {
       throw new BadRequestException('El correo ya está registrado');
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const password = dto.password || (dto.role === 'ADMIN' ? 'admin123' : 'profe123');
+    const hashedPassword = await bcrypt.hash(password, 10);
     
     return this.prisma.user.create({
       data: {

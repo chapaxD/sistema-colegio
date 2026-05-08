@@ -57,6 +57,8 @@ export class SchoolsService {
       phone: dto.phone,
       directorName: dto.directorName,
       educationalLevel: dto.educationalLevel,
+      licenseExpiry: dto.licenseExpiry ? new Date(dto.licenseExpiry) : undefined,
+      licenseStatus: dto.licenseStatus,
     };
 
     if (dto.slug) {
@@ -70,6 +72,26 @@ export class SchoolsService {
     return this.prisma.school.update({
       where: { id },
       data
+    });
+  }
+
+  async updateLicense(id: number, dto: any) {
+    return this.prisma.school.update({
+      where: { id },
+      data: {
+        licenseExpiry: dto.licenseExpiry ? new Date(dto.licenseExpiry) : null,
+        licenseStatus: dto.licenseStatus,
+      } as any
+    });
+  }
+
+  async delete(id: number) {
+    // Nota: En un sistema real, podrías preferir un "Soft Delete" (isActive: false)
+    // Pero si el usuario pide eliminar, borramos en cascada o verificamos.
+    // Prisma borrará en cascada si está configurado en el esquema, 
+    // si no, fallará por integridad referencial (que es más seguro).
+    return this.prisma.school.delete({
+      where: { id }
     });
   }
 }
