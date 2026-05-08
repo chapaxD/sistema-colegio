@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../api'
-import { Plus, Building, Users, BookOpen, MapPin, Phone, Shield, ExternalLink, Search, Pencil, Trash2, X, GraduationCap, ShieldAlert } from 'lucide-vue-next'
+import { Plus, Building, Users, BookOpen, MapPin, Phone, Shield, ExternalLink, Search, Pencil, Trash2, X, GraduationCap, ShieldAlert, Key } from 'lucide-vue-next'
 
 const schools = ref([])
 const loading = ref(false)
@@ -25,7 +25,16 @@ const editingId = ref(null)
 const openCreateModal = () => {
   isEditing.value = false
   editingId.value = null
-  newSchool.value = { name: '', slug: '', address: '', phone: '', adminEmail: '', adminPassword: '' }
+  newSchool.value = {
+    name: '',
+    slug: '',
+    address: '',
+    phone: '',
+    adminEmail: '',
+    adminPassword: '',
+    licenseExpiry: '',
+    licenseStatus: 'ACTIVE'
+  }
   showModal.value = true
 }
 
@@ -116,6 +125,18 @@ const formatStatus = (school) => {
   return `Vence el ${expiry.toLocaleDateString()}`
 }
 
+const promptResetPassword = async (school) => {
+  const newPassword = prompt(`Ingrese la nueva contraseña para el administrador de ${school.name}:`, 'admin123')
+  if (newPassword) {
+    try {
+      await api.post(`/schools/${school.id}/reset-password`, { password: newPassword })
+      alert('Contraseña actualizada exitosamente')
+    } catch (err) {
+      alert('Error al actualizar contraseña')
+    }
+  }
+}
+
 onMounted(fetchSchools)
 </script>
 
@@ -129,7 +150,7 @@ onMounted(fetchSchools)
           <p>Administra todas las instituciones registradas en la plataforma</p>
         </div>
       </div>
-      <button @click="openCreateModal" class="btn-primary">
+      <button @click="openCreateModal" class="btn btn-primary">
         <Plus :size="20" />
         <span>Nuevo Colegio</span>
       </button>
@@ -192,6 +213,9 @@ onMounted(fetchSchools)
                   <div class="school-meta">
                     <span class="school-name">{{ school.name }}</span>
                     <span class="school-address">{{ school.address || 'Sin dirección' }}</span>
+                    <span class="school-admin-email" title="Email del Administrador">
+                      <Users :size="12" /> {{ school.users?.[0]?.email || 'Sin admin' }}
+                    </span>
                   </div>
                 </div>
               </td>
@@ -212,6 +236,9 @@ onMounted(fetchSchools)
               </td>
               <td>
                 <div class="actions">
+                  <button @click="promptResetPassword(school)" class="btn-icon" title="Restablecer Contraseña">
+                    <Key :size="18" />
+                  </button>
                   <button @click="openEditModal(school)" class="btn-icon" title="Editar Colegio">
                     <Pencil :size="18" />
                   </button>
@@ -290,8 +317,8 @@ onMounted(fetchSchools)
           </div>
 
           <div class="modal-actions">
-            <button type="button" @click="showModal = false" class="btn-secondary">Cancelar</button>
-            <button type="submit" class="btn-primary">
+            <button type="button" @click="showModal = false" class="btn btn-outline">Cancelar</button>
+            <button type="submit" class="btn btn-primary">
               {{ isEditing ? 'Guardar Cambios' : 'Crear Institución' }}
             </button>
           </div>
@@ -414,6 +441,20 @@ td {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.school-admin-email {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--primary);
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+.school-admin-email svg {
+  opacity: 0.6;
 }
 
 .school-logo {
@@ -616,9 +657,29 @@ td {
 
 .mt-4 { margin-top: 1rem; }
 
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+}
+
+.btn-icon:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  transform: translateY(-2px);
+}
+
 .btn-icon.delete:hover {
-  color: #ef4444;
   background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
 }
 
 @keyframes modalScale {

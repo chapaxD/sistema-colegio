@@ -11,6 +11,10 @@ export class SchoolsService {
       include: {
         _count: {
           select: { users: true, students: true, courses: true }
+        },
+        users: {
+          where: { role: 'ADMIN' },
+          select: { email: true, id: true }
         }
       }
     });
@@ -92,6 +96,19 @@ export class SchoolsService {
     // si no, fallará por integridad referencial (que es más seguro).
     return this.prisma.school.delete({
       where: { id }
+    });
+  }
+
+  async resetAdminPassword(schoolId: number, newPassword: string) {
+    const admin = await this.prisma.user.findFirst({
+      where: { schoolId, role: 'ADMIN' }
+    });
+    if (!admin) throw new BadRequestException('No se encontró un administrador para este colegio');
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    return this.prisma.user.update({
+      where: { id: admin.id },
+      data: { password: hashedPassword }
     });
   }
 }

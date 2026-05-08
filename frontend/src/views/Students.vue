@@ -363,6 +363,8 @@ const reactivateStudent = async (id) => {
             <th>RUDE</th>
             <th>Apellidos</th>
             <th>Nombres</th>
+            <th>Género</th>
+            <th>Celular</th>
             <th>Curso</th>
             <th>Fecha Nac.</th>
             <th>Acciones</th>
@@ -373,6 +375,12 @@ const reactivateStudent = async (id) => {
             <td class="font-bold">{{ student.rude }}</td>
             <td>{{ student.lastName }}</td>
             <td>{{ student.firstName }}</td>
+            <td class="text-center">
+              <span class="badge-mini" :class="student.gender === 'M' ? 'blue' : 'pink'">
+                {{ student.gender }}
+              </span>
+            </td>
+            <td>{{ student.phone || '-' }}</td>
             <td>
               <div v-if="!student.isActive" class="badge danger">INACTIVO</div>
               <div v-else-if="student.enrollments?.length" class="badge success">
@@ -704,6 +712,17 @@ const reactivateStudent = async (id) => {
 
 .badge.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
 .badge.gray { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); }
+
+.badge-mini {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+.badge-mini.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.badge-mini.pink { background: rgba(ec, 72, 153, 0.1); color: #ec4899; }
+
+.text-center { text-align: center; }
 
 .action-btn.enroll:hover { color: var(--primary); background: rgba(99, 102, 241, 0.1); }
 </style>

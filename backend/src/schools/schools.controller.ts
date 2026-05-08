@@ -52,4 +52,12 @@ export class SchoolsController {
     }
     return this.schoolsService.delete(+id);
   }
+
+  @Post(':id/reset-password')
+  async resetPassword(@Param('id') id: string, @Body() body: any, @Req() req) {
+    if (req.user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('No autorizado');
+    }
+    return this.schoolsService.resetAdminPassword(+id, body.password);
+  }
 }
