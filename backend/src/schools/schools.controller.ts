@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Body, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, UseGuards, Req, ForbiddenException, Param } from '@nestjs/common';
 import { SchoolsService } from './schools.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 
@@ -35,5 +35,13 @@ export class SchoolsController {
       throw new ForbiddenException('Solo los administradores pueden editar los datos del colegio');
     }
     return this.schoolsService.update(req.user.schoolId, dto);
+  }
+
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() dto: any, @Req() req) {
+    if (req.user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Solo el super administrador puede editar cualquier colegio');
+    }
+    return this.schoolsService.update(+id, dto);
   }
 }

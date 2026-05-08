@@ -51,15 +51,25 @@ export class SchoolsService {
   }
 
   async update(id: number, dto: any) {
+    const data: any = {
+      name: dto.name,
+      address: dto.address,
+      phone: dto.phone,
+      directorName: dto.directorName,
+      educationalLevel: dto.educationalLevel,
+    };
+
+    if (dto.slug) {
+      const existing = await this.prisma.school.findFirst({
+        where: { slug: dto.slug, id: { not: id } }
+      });
+      if (existing) throw new BadRequestException('El identificador (slug) ya existe');
+      data.slug = dto.slug;
+    }
+
     return this.prisma.school.update({
       where: { id },
-      data: {
-        name: dto.name,
-        address: dto.address,
-        phone: dto.phone,
-        directorName: dto.directorName,
-        educationalLevel: dto.educationalLevel,
-      }
+      data
     });
   }
 }

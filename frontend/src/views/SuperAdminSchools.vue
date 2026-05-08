@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import api from '../api'
-import { Plus, Building, Users, BookOpen, MapPin, Phone, Shield, ExternalLink, Search } from 'lucide-vue-next'
+import { Plus, Building, Users, BookOpen, MapPin, Phone, Shield, ExternalLink, Search, Pencil, X } from 'lucide-vue-next'
 
 const schools = ref([])
 const loading = ref(false)
@@ -17,6 +17,30 @@ const newSchool = ref({
   adminPassword: ''
 })
 
+const isEditing = ref(false)
+const editingId = ref(null)
+
+const openCreateModal = () => {
+  isEditing.value = false
+  editingId.value = null
+  newSchool.value = { name: '', slug: '', address: '', phone: '', adminEmail: '', adminPassword: '' }
+  showModal.value = true
+}
+
+const openEditModal = (school) => {
+  isEditing.value = true
+  editingId.value = school.id
+  newSchool.value = {
+    name: school.name,
+    slug: school.slug,
+    address: school.address || '',
+    phone: school.phone || '',
+    adminEmail: '', // No editamos el email del admin desde aquí por seguridad
+    adminPassword: '' // No editamos el password desde aquí
+  }
+  showModal.value = true
+}
+
 const fetchSchools = async () => {
   loading.value = true
   try {
@@ -29,15 +53,27 @@ const fetchSchools = async () => {
   }
 }
 
-const createSchool = async () => {
+const saveSchool = async () => {
   try {
-    await api.post('/schools', newSchool.value)
+    if (isEditing.value) {
+      // Para editar, solo mandamos los campos institucionales
+      const updateData = {
+        name: newSchool.value.name,
+        slug: newSchool.value.slug,
+        address: newSchool.value.address,
+        phone: newSchool.value.phone
+      }
+      await api.patch(`/schools/${editingId.value}`, updateData)
+    } else {
+      await api.post('/schools', newSchool.value)
+    }
+    
     showModal.value = false
     fetchSchools()
     // Reset form
     newSchool.value = { name: '', slug: '', address: '', phone: '', adminEmail: '', adminPassword: '' }
   } catch (error) {
-    alert(error.response?.data?.message || 'Error al crear colegio')
+    alert(error.response?.data?.message || 'Error al procesar colegio')
   }
 }
 
@@ -62,7 +98,7 @@ onMounted(fetchSchools)
           <p>Administra todas las instituciones registradas en la plataforma</p>
         </div>
       </div>
-      <button @click="showModal = true" class="btn-primary">
+      <button @click="openCreateModal" class="btn-primary">
         <Plus :size="20" />
         <span>Nuevo Colegio</span>
       </button>
@@ -115,6 +151,9 @@ onMounted(fetchSchools)
               <td>{{ school._count?.courses || 0 }}</td>
               <td>
                 <div class="actions">
+                  <button @click="openEditModal(school)" class="btn-icon" title="Editar Colegio">
+                    <Pencil :size="18" />
+                  </button>
                   <button class="btn-icon" title="Ver Detalles">
                     <ExternalLink :size="18" />
                   </button>
@@ -129,10 +168,17 @@ onMounted(fetchSchools)
     <!-- Modal Nuevo Colegio -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal-content glass-card">
-        <h2>Registrar Nuevo Colegio</h2>
-        <p class="modal-subtitle">Configura los datos iniciales y la cuenta del administrador</p>
+        <div class="modal-header">
+          <div>
+            <h2>{{ isEditing ? 'Editar Colegio' : 'Registrar Nuevo Colegio' }}</h2>
+            <p class="modal-subtitle">{{ isEditing ? 'Actualiza la información institucional del colegio' : 'Configura los datos iniciales y la cuenta del administrador' }}</p>
+          </div>
+          <button @click="showModal = false" class="btn-close">
+            <X :size="24" />
+          </button>
+        </div>
         
-        <form @submit.prevent="createSchool" class="modal-form">
+        <form @submit.prevent="saveSchool" class="modal-form">
           <div class="form-section">
             <h3>Datos Institucionales</h3>
             <div class="form-row">
@@ -151,7 +197,7 @@ onMounted(fetchSchools)
             </div>
           </div>
 
-          <div class="form-section">
+          <div v-if="!isEditing" class="form-section">
             <h3>Cuenta del Administrador Inicial</h3>
             <div class="form-row">
               <div class="form-group">
@@ -167,7 +213,9 @@ onMounted(fetchSchools)
 
           <div class="modal-actions">
             <button type="button" @click="showModal = false" class="btn-secondary">Cancelar</button>
-            <button type="submit" class="btn-primary">Crear Institución</button>
+            <button type="submit" class="btn-primary">
+              {{ isEditing ? 'Guardar Cambios' : 'Crear Institución' }}
+            </button>
           </div>
         </form>
       </div>
@@ -352,9 +400,33 @@ td {
   animation: modalScale 0.3s ease-out;
 }
 
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+}
+
 .modal-subtitle {
   color: var(--text-muted);
-  margin-bottom: 2rem;
 }
 
 .form-section {
