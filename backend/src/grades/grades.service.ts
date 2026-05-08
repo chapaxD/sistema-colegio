@@ -271,17 +271,22 @@ export class GradesService {
       subjects: reportBySubject,
     };
   }
-
   async getCourseTrimesterCentralizer(courseId: number, period: number, schoolId: number) {
+    // Obtener la gestión más reciente si no se especifica (aunque aquí no tenemos parámetro de año)
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId },
+      orderBy: { year: 'desc' }
+    });
+
     const students = await this.prisma.student.findMany({
       where: {
         schoolId,
         isActive: true as any,
-        enrollments: { some: { courseId } }
+        enrollments: { some: { courseId, academicYearId: latestYear?.id } }
       },
       include: {
         enrollments: {
-          where: { courseId },
+          where: { courseId, academicYearId: latestYear?.id },
           include: {
             grades: { where: { period }, include: { subject: true } }
           }
@@ -289,17 +294,33 @@ export class GradesService {
       }
     });
 
-    const subjects = await this.prisma.subject.findMany({ where: { schoolId } });
+    // Solo obtener materias que tengan alguna relación con este curso o todas las del colegio
+    // Para ser precisos, deberíamos filtrar por materias asignadas al curso en este año
+    const subjects = await this.prisma.subject.findMany({ 
+      where: { 
+        schoolId,
+        assignments: { some: { courseId, academicYearId: latestYear?.id } }
+      },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    // Si no hay asignaciones (colegio nuevo), fallback a todas las materias
+    const finalSubjects = subjects.length > 0 
+      ? subjects 
+      : await this.prisma.subject.findMany({ where: { schoolId }, orderBy: { sortOrder: 'asc' } });
 
     const data = students.map(s => {
       const enrollment = s.enrollments[0];
+      if (!enrollment) return null;
+
       const gradesBySubject = {};
       enrollment.grades.forEach(g => {
         gradesBySubject[g.subjectId] = g.score;
       });
 
       const totalScore = enrollment.grades.reduce((acc, curr) => acc + curr.score, 0);
-      const avgScore = subjects.length > 0 ? totalScore / subjects.length : 0;
+      // Dividir solo por las materias que realmente existen para este curso
+      const avgScore = finalSubjects.length > 0 ? totalScore / finalSubjects.length : 0;
 
       return {
         id: s.id,
@@ -308,21 +329,26 @@ export class GradesService {
         average: Math.round(avgScore),
         status: avgScore >= 51 ? 'APROBADO' : 'REPROBADO'
       };
-    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    }).filter((s): s is any => s !== null).sort((a, b) => a.fullName.localeCompare(b.fullName));
 
-    return { subjects, students: data };
+    return { subjects: finalSubjects, students: data };
   }
 
   async getCourseAnnualCentralizer(courseId: number, schoolId: number, subjectId?: number) {
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId },
+      orderBy: { year: 'desc' }
+    });
+
     const students = await this.prisma.student.findMany({
       where: {
         schoolId,
         isActive: true as any,
-        enrollments: { some: { courseId } }
+        enrollments: { some: { courseId, academicYearId: latestYear?.id } }
       },
       include: {
         enrollments: {
-          where: { courseId },
+          where: { courseId, academicYearId: latestYear?.id },
           include: {
             grades: {
               where: subjectId ? { subjectId } : undefined,
@@ -333,10 +359,23 @@ export class GradesService {
       }
     });
 
-    const totalSubjects = await this.prisma.subject.count({ where: { schoolId } });
+    // Contar solo materias asignadas al curso para el promedio real
+    const totalSubjects = await this.prisma.subject.count({ 
+      where: { 
+        schoolId,
+        assignments: { some: { courseId, academicYearId: latestYear?.id } }
+      } 
+    });
+    
+    // Fallback si no hay asignaciones
+    const subjectCount = totalSubjects > 0 
+      ? totalSubjects 
+      : await this.prisma.subject.count({ where: { schoolId } });
 
     return students.map(s => {
       const enrollment = s.enrollments[0];
+      if (!enrollment) return null;
+      
       const scores = { t1: 0, t2: 0, t3: 0 };
 
       if (subjectId) {
@@ -344,7 +383,6 @@ export class GradesService {
           scores[`t${g.period}`] = g.score;
         });
       } else {
-        // Promedio general por trimestre
         const periodData = {
           1: { sum: 0, count: 0 },
           2: { sum: 0, count: 0 },
@@ -357,7 +395,7 @@ export class GradesService {
         });
 
         [1, 2, 3].forEach(p => {
-          scores[`t${p}`] = totalSubjects > 0 ? Math.round(periodData[p].sum / totalSubjects) : 0;
+          scores[`t${p}`] = subjectCount > 0 ? Math.round(periodData[p].sum / subjectCount) : 0;
         });
       }
 
@@ -371,7 +409,7 @@ export class GradesService {
         average: Math.round(avg),
         status: avg >= 51 ? 'APROBADO' : 'REPROBADO'
       };
-    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    }).filter((s): s is any => s !== null).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }
 
   async getPedagogicalReportData(courseId: number, schoolId: number) {
@@ -381,14 +419,19 @@ export class GradesService {
         throw new Error('CourseId or SchoolId is missing');
       }
 
+      const latestYear = await this.prisma.academicYear.findFirst({
+        where: { schoolId: Number(schoolId) },
+        orderBy: { year: 'desc' }
+      });
+
       const students = await this.prisma.student.findMany({
         where: {
           schoolId: Number(schoolId),
-          enrollments: { some: { courseId: Number(courseId) } }
+          enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear?.id } }
         },
         include: {
           enrollments: {
-            where: { courseId: Number(courseId) },
+            where: { courseId: Number(courseId), academicYearId: latestYear?.id },
             include: {
               attendances: true,
               grades: true

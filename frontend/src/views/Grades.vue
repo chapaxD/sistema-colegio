@@ -92,7 +92,13 @@ const fetchData = async () => {
     students.value = studentsRes.data.filter(s => 
       s.enrollments.some(e => e.courseId === parseInt(selectedCourse.value))
     ).map(s => {
-      const enrollment = s.enrollments.find(e => e.courseId === parseInt(selectedCourse.value))
+      // Priorizar inscripción de la gestión actual o la más reciente
+      const enrollment = s.enrollments
+        .filter(e => e.courseId === parseInt(selectedCourse.value))
+        .sort((a, b) => (b.academicYear?.year || 0) - (a.academicYear?.year || 0))[0];
+
+      if (!enrollment) return null;
+
       const dims = dimensionScores.value.find(d => d.enrollmentId === enrollment.id) || { ser: 0, autoSer: 0 }
       const gradeObj = finalGrades.find(g => g.enrollmentId === enrollment.id)
       

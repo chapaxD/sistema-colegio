@@ -151,10 +151,10 @@ const downloadPDF = () => {
   // Body rows
   const bodyRows = students.map((st, idx) => {
     const scoreCells = isTrimester
-      ? subjectList.map(s => `<td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.grades[s.id] ?? '-'}</td>`).join('')
-      : `<td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.t1 || '-'}</td>
-         <td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.t2 || '-'}</td>
-         <td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.t3 || '-'}</td>`
+      ? subjectList.map(s => `<td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.grades[s.id] !== undefined ? st.grades[s.id] : '-'}</td>`).join('')
+      : `<td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.t1 !== undefined ? st.t1 : '-'}</td>
+         <td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.t2 !== undefined ? st.t2 : '-'}</td>
+         <td style="border:1px solid #ccc;text-align:center;padding:2px;font-size:7.5pt;">${st.t3 !== undefined ? st.t3 : '-'}</td>`
     const rowBg = idx % 2 === 0 ? '#ffffff' : '#f9fafb'
     const avg = st.average
     const avgColor = avg >= 51 ? '#166534' : '#991b1b'
@@ -393,7 +393,7 @@ const abbreviateSubject = (name) => {
               <td>{{ index + 1 }}</td>
               <td class="name-cell">{{ student.fullName }}</td>
               <td v-for="s in filteredSubjects" :key="s.id" class="score-cell">
-                {{ student.grades[s.id] || '-' }}
+                {{ student.grades[s.id] !== undefined ? student.grades[s.id] : '-' }}
               </td>
               <td class="avg-cell">{{ student.average }}</td>
               <td class="status-cell">
@@ -456,9 +456,9 @@ const abbreviateSubject = (name) => {
             <tr v-for="(student, index) in data" :key="student.id">
               <td>{{ index + 1 }}</td>
               <td class="name-cell">{{ student.fullName }}</td>
-              <td class="score-cell">{{ student.t1 || '-' }}</td>
-              <td class="score-cell">{{ student.t2 || '-' }}</td>
-              <td class="score-cell">{{ student.t3 || '-' }}</td>
+              <td class="score-cell">{{ student.t1 !== undefined ? student.t1 : '-' }}</td>
+              <td class="score-cell">{{ student.t2 !== undefined ? student.t2 : '-' }}</td>
+              <td class="score-cell">{{ student.t3 !== undefined ? student.t3 : '-' }}</td>
               <td class="avg-cell">{{ student.average }}</td>
               <td class="status-cell" :class="student.status.toLowerCase()">
                 {{ student.status }}

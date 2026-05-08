@@ -98,6 +98,7 @@ export class StudentsService {
           where: { schoolId }, // Solo incluir inscripciones de este colegio en el listado
           include: { 
             course: true,
+            academicYear: true,
             grades: true 
           }
         }
