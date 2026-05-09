@@ -259,11 +259,11 @@ const fetchPedagogicalData = async () => {
       });
     }
 
-    // Cargar dificultades guardadas o inicializar
+    // Cargar dificultades guardadas o inicializar con reprobados
     if (res.data.savedDifficulties && res.data.savedDifficulties.length > 0) {
       manualData.value.difficultiesList = res.data.savedDifficulties;
-    } else if (res.data.strugglingStudents) {
-      manualData.value.difficultiesList = res.data.strugglingStudents.map(s => ({
+    } else if (res.data.reprobados) {
+      manualData.value.difficultiesList = res.data.reprobados.map(s => ({
         studentId: s.id,
         fullName: s.fullName,
         subjects: s.subjects || '',
