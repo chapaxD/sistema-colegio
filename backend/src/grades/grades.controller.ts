@@ -59,6 +59,16 @@ export class GradesController {
     return this.gradesService.getGradesBySubject(courseId, subjectId, period, req.user.schoolId);
   }
 
+  @Get('full-sheet')
+  getFullSheet(
+    @Query('courseId', ParseIntPipe) courseId: number,
+    @Query('subjectId', ParseIntPipe) subjectId: number,
+    @Query('period', ParseIntPipe) period: number,
+    @Req() req
+  ) {
+    return this.gradesService.getFullSheet(courseId, subjectId, period, req.user.schoolId, req.user.userId);
+  }
+
   @Post('register')
   async register(@Body() dto: CreateGradeDto, @Req() req) {
     return this.gradesService.registerGrade(dto, req.user.userId, req.user.schoolId);

@@ -242,11 +242,19 @@ export class GradesService {
         schoolId: Number(schoolId),
         enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear?.id } }
       },
-      include: {
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        rude: true,
         enrollments: {
           where: { courseId: Number(courseId), academicYearId: latestYear?.id },
-          include: {
-            grades: { where: { period: Number(period) } }
+          select: {
+            id: true,
+            grades: { 
+              where: { period: Number(period) },
+              select: { subjectId: true, score: true }
+            }
           }
         }
       }
@@ -254,6 +262,7 @@ export class GradesService {
 
     const subjects = await this.prisma.subject.findMany({
       where: { schoolId: Number(schoolId) },
+      select: { id: true, name: true, sortOrder: true },
       orderBy: { sortOrder: 'asc' }
     });
 
@@ -645,6 +654,84 @@ export class GradesService {
       }
     }
     return results;
+  }
+
+  async getFullSheet(courseId: number, subjectId: number, period: number, schoolId: number, userId?: number) {
+    // 1. Obtener gestión actual
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId: Number(schoolId) },
+      orderBy: { year: 'desc' }
+    });
+
+    if (!latestYear) throw new Error('No hay gestión escolar activa');
+
+    // 2. Obtener datos básicos en paralelo
+    const [students, evaluations, dimensions, grades, school, assignment] = await Promise.all([
+      // Estudiantes inscritos en este curso y gestión
+      this.prisma.student.findMany({
+        where: {
+          schoolId: Number(schoolId),
+          enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear.id } }
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          rude: true,
+          enrollments: {
+            where: { courseId: Number(courseId), academicYearId: latestYear.id },
+            select: { id: true }
+          }
+        },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+      }),
+      // Evaluaciones dinámicas
+      this.prisma.evaluation.findMany({
+        where: { courseId: Number(courseId), subjectId: Number(subjectId), period: Number(period) },
+        select: {
+          id: true,
+          title: true,
+          dimension: true,
+          scores: {
+            select: { enrollmentId: true, score: true }
+          }
+        }
+      }),
+      // Dimensiones fijas (SER, AUTO)
+      this.prisma.dimensionScore.findMany({
+        where: { subjectId: Number(subjectId), period: Number(period), enrollment: { courseId: Number(courseId) } },
+        select: { enrollmentId: true, ser: true, autoSer: true }
+      }),
+      // Notas finales
+      this.prisma.grade.findMany({
+        where: { subjectId: Number(subjectId), period: Number(period), enrollment: { courseId: Number(courseId) } },
+        select: { enrollmentId: true, score: true }
+      }),
+      // Info de la escuela
+      this.prisma.school.findUnique({ 
+        where: { id: Number(schoolId) },
+        select: { id: true, name: true, directorName: true, educationalLevel: true }
+      }),
+      // Asignación docente
+      this.prisma.subjectAssignment.findFirst({
+        where: { courseId: Number(courseId), subjectId: Number(subjectId), academicYearId: latestYear.id },
+        select: {
+          teacher: {
+            select: { firstName: true, lastName: true }
+          }
+        }
+      })
+    ]);
+
+    return {
+      students,
+      evaluations,
+      dimensions,
+      grades,
+      school,
+      assignment,
+      academicYear: latestYear
+    };
   }
 
   async registerFullBatch(dto: any, schoolId: number) {

@@ -2,6 +2,7 @@
 import { onMounted, ref, watch, computed } from 'vue'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
+import { cache } from '../utils/cache'
 import { Save, Plus, Minus, Trash2, Loader2, Info, ChevronRight, ChevronLeft, FileText, Printer } from 'lucide-vue-next'
 import html2pdf from 'html2pdf.js'
 
@@ -34,12 +35,22 @@ const settings = ref({
 
 onMounted(async () => {
   try {
-    const [c, s] = await Promise.all([
-      api.get('/academic/courses'),
-      api.get('/academic/subjects')
-    ])
-    courses.value = c.data
-    subjects.value = s.data
+    const cachedC = cache.get('academic_courses')
+    const cachedS = cache.get('academic_subjects')
+
+    if (cachedC && cachedS) {
+      courses.value = cachedC
+      subjects.value = cachedS
+    } else {
+      const [c, s] = await Promise.all([
+        api.get('/academic/courses'),
+        api.get('/academic/subjects')
+      ])
+      courses.value = c.data
+      subjects.value = s.data
+      cache.set('academic_courses', c.data)
+      cache.set('academic_subjects', s.data)
+    }
 
     const saved = localStorage.getItem('school_settings')
     if (saved) settings.value = JSON.parse(saved)
@@ -53,29 +64,23 @@ const fetchData = async () => {
   
   loading.value = true
   try {
-    const [studentsRes, evalsRes, dimsRes, gradesRes, schoolRes, assignmentRes] = await Promise.all([
-      api.get('/students'),
-      api.get(`/grades/evaluations?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`),
-      api.get(`/grades/dimensions?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`),
-      api.get(`/grades/final?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`),
-      api.get('/schools/my'),
-      api.get(`/academic/assignments/lookup?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}`)
-    ])
+    const res = await api.get(`/grades/full-sheet?courseId=${selectedCourse.value}&subjectId=${selectedSubject.value}&period=${selectedTrimester.value}`)
+    const { students: rawStudents, evaluations: rawEvals, dimensions: rawDims, grades: rawGrades, school, assignment } = res.data
     
-    evaluations.value = evalsRes.data
-    dimensionScores.value = dimsRes.data
-    const finalGrades = gradesRes.data
+    evaluations.value = rawEvals
+    dimensionScores.value = rawDims
 
-    // Actualizar configuración institucional dinámicamente para los reportes
-    if (schoolRes.data) {
-      settings.value.schoolName = schoolRes.data.name
-      settings.value.directorName = schoolRes.data.directorName || 'Lic. Magda Zeballos'
-      settings.value.level = schoolRes.data.educationalLevel || 'Primaria Comunitaria Vocacional'
+    // Actualizar configuración institucional
+    if (school) {
+      settings.value.schoolName = school.name
+      settings.value.directorName = school.directorName || 'Lic. Magda Zeballos'
+      settings.value.level = school.educationalLevel || 'Primaria Comunitaria Vocacional'
+      cache.set('school_info', school)
     }
 
-    // Determinar nombre del docente (Asignación > Perfil propio > Fallback)
-    if (assignmentRes.data?.teacher) {
-      const t = assignmentRes.data.teacher
+    // Determinar nombre del docente
+    if (assignment?.teacher) {
+      const t = assignment.teacher
       settings.value.teacherName = `${t.firstName} ${t.lastName}`
     } else if (authStore.user?.role === 'TEACHER') {
       try {
@@ -89,18 +94,12 @@ const fetchData = async () => {
     }
     
     // Mapear estudiantes con sus notas
-    students.value = studentsRes.data.filter(s => 
-      s.enrollments.some(e => e.courseId === parseInt(selectedCourse.value))
-    ).map(s => {
-      // Priorizar inscripción de la gestión actual o la más reciente
-      const enrollment = s.enrollments
-        .filter(e => e.courseId === parseInt(selectedCourse.value))
-        .sort((a, b) => (b.academicYear?.year || 0) - (a.academicYear?.year || 0))[0];
+    students.value = rawStudents.map(s => {
+      const enrollment = s.enrollments[0]
+      if (!enrollment) return null
 
-      if (!enrollment) return null;
-
-      const dims = dimensionScores.value.find(d => d.enrollmentId === enrollment.id) || { ser: 0, autoSer: 0 }
-      const gradeObj = finalGrades.find(g => g.enrollmentId === enrollment.id)
+      const dims = rawDims.find(d => d.enrollmentId === enrollment.id) || { ser: 0, autoSer: 0 }
+      const gradeObj = rawGrades.find(g => g.enrollmentId === enrollment.id)
       
       return {
         id: s.id,
@@ -108,25 +107,21 @@ const fetchData = async () => {
         firstName: s.firstName,
         lastName: s.lastName,
         fullName: `${s.lastName} ${s.firstName}`,
-        ser: dims.ser,
-        autoSer: dims.autoSer,
-        finalScore: gradeObj ? gradeObj.score : 0,
-        evaluations: evaluations.value.map(ev => {
+        ser: Number(dims.ser || 0),
+        autoSer: Number(dims.autoSer || 0),
+        finalScore: Number(gradeObj?.score || 0),
+        evaluations: rawEvals.map(ev => {
           const scoreObj = ev.scores.find(sc => sc.enrollmentId === enrollment.id)
           return {
             evaluationId: ev.id,
             dimension: ev.dimension,
-            score: scoreObj ? scoreObj.score : 0
+            score: scoreObj ? Number(scoreObj.score || 0) : 0
           }
         })
       }
-    }).sort((a, b) => {
-      const lastSort = (a.lastName || '').localeCompare(b.lastName || '')
-      if (lastSort !== 0) return lastSort
-      return (a.firstName || '').localeCompare(b.firstName || '')
-    })
+    }).filter(Boolean)
   } catch (err) {
-    console.error('Error fetching data')
+    console.error('Error fetching data', err)
   } finally {
     loading.value = false
   }
@@ -206,22 +201,25 @@ const saveAll = async () => {
 // Cálculos dinámicos con escalado oficial
 const getSerAvg = (student) => {
   const scores = student.evaluations.filter(e => e.dimension === 'SER')
-  if (scores.length === 0) return Math.min(student.ser || 0, 10)
-  const avg = scores.reduce((acc, curr) => acc + curr.score, 0) / scores.length
+  if (scores.length === 0) return Math.min(Number(student.ser || 0), 10)
+  const total = scores.reduce((acc, curr) => acc + Number(curr.score || 0), 0)
+  const avg = total / scores.length
   return Math.round(avg)
 }
 
 const getSaberAvg = (student) => {
   const scores = student.evaluations.filter(e => e.dimension === 'SABER')
   if (scores.length === 0) return 0
-  const avg = scores.reduce((acc, curr) => acc + curr.score, 0) / scores.length
+  const total = scores.reduce((acc, curr) => acc + Number(curr.score || 0), 0)
+  const avg = total / scores.length
   return Math.round(avg)
 }
 
 const getHacerAvg = (student) => {
   const scores = student.evaluations.filter(e => e.dimension === 'HACER')
   if (scores.length === 0) return 0
-  const avg = scores.reduce((acc, curr) => acc + curr.score, 0) / scores.length
+  const total = scores.reduce((acc, curr) => acc + Number(curr.score || 0), 0)
+  const avg = total / scores.length
   return Math.round(avg)
 }
 
@@ -230,8 +228,9 @@ const getAutoAvg = (student) => {
 }
 
 const getFinalScore = (student) => {
-  if (isDirectMode.value) return student.finalScore
-  return getSerAvg(student) + getSaberAvg(student) + getHacerAvg(student) + getAutoAvg(student)
+  if (isDirectMode.value) return Number(student.finalScore || 0)
+  const total = getSerAvg(student) + getSaberAvg(student) + getHacerAvg(student) + getAutoAvg(student)
+  return isNaN(total) ? 0 : total
 }
 
 const clampValue = (obj, field, max) => {

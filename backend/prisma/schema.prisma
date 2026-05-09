@@ -60,6 +60,8 @@ model Student {
   schoolId    Int
   enrollments Enrollment[]
   school      School       @relation(fields: [schoolId], references: [id])
+
+  @@index([schoolId])
 }
 
 model Course {
@@ -121,6 +123,9 @@ model Enrollment {
   learningDifficulties LearningDifficulty[]
 
   @@unique([studentId, academicYearId])
+  @@index([courseId])
+  @@index([schoolId])
+  @@index([academicYearId])
 }
 
 model SubjectAssignment {
@@ -137,6 +142,8 @@ model SubjectAssignment {
   teacher        Teacher      @relation(fields: [teacherId], references: [id])
 
   @@unique([subjectId, courseId, academicYearId])
+  @@index([schoolId])
+  @@index([teacherId])
 }
 
 model Grade {
@@ -150,6 +157,7 @@ model Grade {
   subject      Subject    @relation(fields: [subjectId], references: [id])
 
   @@unique([enrollmentId, subjectId, period])
+  @@index([subjectId, period])
 }
 
 model Attendance {
@@ -175,6 +183,7 @@ model Evaluation {
   subject   Subject           @relation(fields: [subjectId], references: [id])
   scores    EvaluationScore[]
   // @@unique([title, subjectId, period, courseId])
+  @@index([courseId, subjectId, period])
 }
 
 model EvaluationScore {
@@ -199,6 +208,7 @@ model DimensionScore {
   subject      Subject    @relation(fields: [subjectId], references: [id])
 
   @@unique([enrollmentId, subjectId, period])
+  @@index([subjectId, period])
 }
 
 model Event {

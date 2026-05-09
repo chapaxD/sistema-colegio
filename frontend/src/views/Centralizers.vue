@@ -2,6 +2,7 @@
 import { onMounted, ref, watch, computed } from 'vue'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
+import { cache } from '../utils/cache'
 import { Printer, Loader2, Info, ChevronRight, FileSpreadsheet, FileText } from 'lucide-vue-next'
 import jsPDF from 'jspdf'
 
@@ -30,12 +31,22 @@ const settings = ref({
 
 onMounted(async () => {
   try {
-    const [c, s] = await Promise.all([
-      api.get('/academic/courses'),
-      api.get('/academic/subjects')
-    ])
-    courses.value = c.data
-    subjects.value = s.data
+    const cachedC = cache.get('academic_courses')
+    const cachedS = cache.get('academic_subjects')
+
+    if (cachedC && cachedS) {
+      courses.value = cachedC
+      subjects.value = cachedS
+    } else {
+      const [c, s] = await Promise.all([
+        api.get('/academic/courses'),
+        api.get('/academic/subjects')
+      ])
+      courses.value = c.data
+      subjects.value = s.data
+      cache.set('academic_courses', c.data)
+      cache.set('academic_subjects', s.data)
+    }
 
     const savedSettings = localStorage.getItem('school_settings')
     if (savedSettings) {
@@ -63,14 +74,19 @@ const fetchData = async () => {
   
   loading.value = true
   try {
-    const [schoolRes] = await Promise.all([
-      api.get('/schools/my')
-    ])
+    const cachedSchool = cache.get('school_info')
+    let schoolData = cachedSchool
 
-    if (schoolRes.data) {
-      settings.value.schoolName = schoolRes.data.name
-      settings.value.directorName = schoolRes.data.directorName || 'Director(a) no asignado(a)'
-      settings.value.level = schoolRes.data.educationalLevel || ''
+    if (!schoolData) {
+      const schoolRes = await api.get('/schools/my')
+      schoolData = schoolRes.data
+      cache.set('school_info', schoolData)
+    }
+
+    if (schoolData) {
+      settings.value.schoolName = schoolData.name
+      settings.value.directorName = schoolData.directorName || 'Director(a) no asignado(a)'
+      settings.value.level = schoolData.educationalLevel || ''
     }
 
     if (activeTab.value === 'trimester') {
