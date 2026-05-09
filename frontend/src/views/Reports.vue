@@ -244,7 +244,7 @@ const fetchPedagogicalData = async () => {
       manualData.value.difficultiesList = res.data.strugglingStudents.map(s => ({
         studentId: s.id,
         fullName: s.fullName,
-        subjects: '',
+        subjects: s.subjects || '',
         notes: ''
       }))
     } else {
@@ -333,7 +333,7 @@ const printDifficultiesReport = () => {
       <tr>
         <th style="width: 40px;">Nº</th>
         <th>NOMBRE COMPLETO</th>
-        <th style="width: 120px;">ASIGNATURA</th>
+        <th style="width: 140px;">ÁREA / ASIGNATURA</th>
         <th>DIFICULTADES</th>
       </tr>
     </thead>
@@ -741,7 +741,7 @@ const printPedagogical = () => {
             <thead>
               <tr>
                 <th style="width: 250px;">Estudiante</th>
-                <th style="width: 150px;">Asignatura</th>
+                <th style="width: 150px;">Área / Asignatura</th>
                 <th>Descripción de Dificultades</th>
                 <th style="width: 50px;"></th>
               </tr>

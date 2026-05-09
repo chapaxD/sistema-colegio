@@ -468,16 +468,6 @@ export class GradesService {
         return null;
       }).filter(Boolean);
 
-      const reprobados = studentList.map(s => {
-        const enrollment = s.enrollments?.[0];
-        if (!enrollment || !enrollment.grades || enrollment.grades.length === 0) return null;
-        const avg = enrollment.grades.reduce((acc, curr) => acc + curr.score, 0) / enrollment.grades.length;
-        if (avg < 51) {
-          return { id: s.id, fullName: `${s.lastName} ${s.firstName}`, phone: s.phone || 'S/N', average: Math.round(avg) };
-        }
-        return null;
-      }).filter(Boolean);
-
       // Obtener solo las materias que están asignadas a este curso en la gestión actual
       const subjects = await this.prisma.subject.findMany({
         where: { 
@@ -493,15 +483,45 @@ export class GradesService {
         orderBy: { name: 'asc' }
       });
 
+      const reprobados = studentList.map(s => {
+        const enrollment = s.enrollments?.[0];
+        if (!enrollment || !enrollment.grades || enrollment.grades.length === 0) return null;
+        
+        // Materias reprobadas (< 51)
+        const failedSubjects = (enrollment.grades || [])
+          .filter(g => g.score < 51)
+          .map(g => finalSubjects.find(sub => sub.id === g.subjectId)?.name || '');
+        
+        const avg = enrollment.grades.reduce((acc, curr) => acc + curr.score, 0) / enrollment.grades.length;
+        if (avg < 51 || failedSubjects.length > 0) {
+          return { 
+            id: s.id, 
+            fullName: `${s.lastName} ${s.firstName}`, 
+            phone: s.phone || 'S/N', 
+            average: Math.round(avg),
+            subjects: Array.from(new Set(failedSubjects)).filter(Boolean).join(' - ')
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
       // Alumnos con rendimiento bajo (51-60) para sugerir en Dificultades Leve
       const strugglingStudents = studentList.map(s => {
         const enrollment = s.enrollments?.[0];
         if (!enrollment || !enrollment.grades) return null;
         
-        // Ver si tiene alguna materia entre 51 y 60
-        const hasLowPass = enrollment.grades.some(g => g.score >= 51 && g.score <= 60);
-        if (hasLowPass) {
-          return { id: s.id, fullName: `${s.lastName} ${s.firstName}`, phone: s.phone || 'S/N' };
+        // Materias en riesgo (51-60)
+        const lowSubjects = (enrollment.grades || [])
+          .filter(g => g.score >= 51 && g.score <= 60)
+          .map(g => finalSubjects.find(sub => sub.id === g.subjectId)?.name || '');
+
+        if (lowSubjects.length > 0) {
+          return { 
+            id: s.id, 
+            fullName: `${s.lastName} ${s.firstName}`, 
+            phone: s.phone || 'S/N',
+            subjects: Array.from(new Set(lowSubjects)).filter(Boolean).join(' - ')
+          };
         }
         return null;
       }).filter(Boolean);
