@@ -170,37 +170,27 @@ const removeEvaluation = async (dimension) => {
 const saveAll = async () => {
   saving.value = true
   try {
-    for (const s of students.value) {
-      if (!isDirectMode.value) {
-        // 1. Guardar Dimensiones Fijas (AUTO)
-        await api.post('/grades/dimensions', {
-          enrollmentId: s.enrollmentId,
-          subjectId: parseInt(selectedSubject.value),
-          period: selectedTrimester.value,
-          ser: s.ser,
-          autoSer: s.autoSer,
-          syncAll: syncDimensions.value
-        })
-        
-        // 2. Guardar Notas de Evaluaciones (SER, SABER, HACER)
-        for (const ev of s.evaluations) {
-          await api.post('/grades/evaluations/score', {
-            evaluationId: ev.evaluationId,
-            enrollmentId: s.enrollmentId,
-            score: ev.score,
-            syncAll: syncDimensions.value && ev.dimension === 'SER'
-          })
-        }
-      }
-
-      // 3. Guardar Calificación Final Trimestral
-      await api.post('/grades/register', {
+    const payload = {
+      courseId: parseInt(selectedCourse.value),
+      subjectId: parseInt(selectedSubject.value),
+      period: selectedTrimester.value,
+      syncAll: syncDimensions.value,
+      isDirectMode: isDirectMode.value,
+      students: students.value.map(s => ({
         enrollmentId: s.enrollmentId,
-        subjectId: parseInt(selectedSubject.value),
-        period: selectedTrimester.value,
-        score: getFinalScore(s)
-      })
+        ser: s.ser,
+        autoSer: s.autoSer,
+        finalScore: getFinalScore(s),
+        evaluations: s.evaluations.map(ev => ({
+          evaluationId: ev.evaluationId,
+          score: ev.score,
+          dimension: ev.dimension
+        }))
+      }))
     }
+
+    await api.post('/grades/batch-all', payload)
+    
     message.value = { text: 'Registro guardado exitosamente', type: 'success' }
     setTimeout(() => message.value = { text: '', type: '' }, 3000)
     fetchData() 
@@ -398,6 +388,17 @@ const generatePDF = () => {
         </button>
       </div>
     </div>
+
+    <!-- Mensaje de estado (Toast) -->
+    <Transition name="toast">
+      <div v-if="message.text" :class="['alert-toast', message.type]">
+        <div class="alert-content">
+          <Info v-if="message.type === 'info'" :size="20" />
+          <Save v-if="message.type === 'success'" :size="20" />
+          <span>{{ message.text }}</span>
+        </div>
+      </div>
+    </Transition>
 
     <div class="filters-bar glass-card">
       <div class="filter-group">
@@ -734,5 +735,55 @@ const generatePDF = () => {
   flex-direction: column;
   align-items: center;
   gap: 1rem;
+}
+
+/* Toast Styles */
+.alert-toast {
+  position: fixed;
+  top: 2rem;
+  right: 2rem;
+  z-index: 9999;
+  min-width: 300px;
+}
+
+.alert-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.alert-toast.success .alert-content {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.alert-toast.error .alert-content {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Toast Transition */
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-enter-from {
+  transform: translateX(100px);
+  opacity: 0;
+}
+
+.toast-leave-to {
+  transform: scale(0.9);
+  opacity: 0;
 }
 </style>

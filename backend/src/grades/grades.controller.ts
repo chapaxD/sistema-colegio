@@ -118,4 +118,9 @@ export class GradesController {
   async saveLearningDifficulties(@Body() dto: any, @Req() req) {
     return this.gradesService.saveLearningDifficulties(dto, req.user.schoolId);
   }
+
+  @Post('batch-all')
+  async registerFullBatch(@Body() dto: any, @Req() req) {
+    return this.gradesService.registerFullBatch(dto, req.user.schoolId);
+  }
 }

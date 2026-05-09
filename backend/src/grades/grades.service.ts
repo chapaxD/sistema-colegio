@@ -232,52 +232,81 @@ export class GradesService {
   }
 
   async getCourseTrimesterCentralizer(courseId: number, period: number, schoolId: number) {
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId: Number(schoolId) },
+      orderBy: { year: 'desc' }
+    });
+
     const students = await this.prisma.student.findMany({
       where: {
-        schoolId,
-        enrollments: { some: { courseId } }
+        schoolId: Number(schoolId),
+        enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear?.id } }
       },
       include: {
         enrollments: {
-          where: { courseId },
+          where: { courseId: Number(courseId), academicYearId: latestYear?.id },
           include: {
-            grades: { where: { period } }
+            grades: { where: { period: Number(period) } }
           }
         }
       }
     });
 
     const subjects = await this.prisma.subject.findMany({
-      where: { schoolId },
+      where: { schoolId: Number(schoolId) },
       orderBy: { sortOrder: 'asc' }
     });
 
-    return students.map(s => {
+    const mappedStudents = students.map(s => {
       const enrollment = s.enrollments[0];
-      const studentGrades = subjects.reduce((acc, sub) => {
+      const studentGrades = {};
+      let total = 0;
+      let count = 0;
+
+      subjects.forEach(sub => {
         const grade = enrollment.grades.find(g => g.subjectId === sub.id);
-        acc[sub.name] = grade ? grade.score : 0;
-        return acc;
-      }, {});
+        const score = grade ? grade.score : 0;
+        studentGrades[sub.id.toString()] = score;
+        if (score > 0) {
+          total += score;
+          count++;
+        }
+      });
+
+      const average = count > 0 ? Math.round(total / count) : 0;
 
       return {
         id: s.id,
+        firstName: s.firstName,
+        lastName: s.lastName,
         fullName: `${s.lastName} ${s.firstName}`,
         rude: s.rude,
-        grades: studentGrades
+        grades: studentGrades,
+        average,
+        status: average >= 51 ? 'APROBADO' : 'REPROBADO'
       };
-    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    });
+
+    return {
+      students: mappedStudents,
+      subjects: subjects.map(sub => ({ id: sub.id, name: sub.name }))
+    };
   }
 
   async getCourseAnnualCentralizer(courseId: number, schoolId: number, subjectId?: number) {
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId: Number(schoolId) },
+      orderBy: { year: 'desc' }
+    });
+
     const students = await this.prisma.student.findMany({
       where: {
-        schoolId,
-        enrollments: { some: { courseId } }
+        schoolId: Number(schoolId),
+        enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear?.id } }
       },
       include: {
         enrollments: {
-          where: { courseId },
+          where: { courseId: Number(courseId), academicYearId: latestYear?.id },
           include: {
             grades: true
           }
@@ -287,31 +316,45 @@ export class GradesService {
 
     const subjects = await this.prisma.subject.findMany({
       where: { 
-        schoolId,
-        ...(subjectId ? { id: subjectId } : {})
-      },
-      orderBy: { sortOrder: 'asc' }
+        schoolId: Number(schoolId),
+        ...(subjectId ? { id: Number(subjectId) } : {})
+      }
     });
 
     return students.map(s => {
       const enrollment = s.enrollments[0];
-      const annualGrades = subjects.reduce((acc, sub) => {
-        const t1 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 1)?.score || 0;
-        const t2 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 2)?.score || 0;
-        const t3 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 3)?.score || 0;
-        const avg = Math.round((t1 + t2 + t3) / ( (t1?1:0) + (t2?1:0) + (t3?1:0) || 1 ));
-        
-        acc[sub.name] = { t1, t2, t3, annual: avg };
-        return acc;
-      }, {});
+      
+      let t1Total = 0, t2Total = 0, t3Total = 0;
+      let t1Count = 0, t2Count = 0, t3Count = 0;
+
+      subjects.forEach(sub => {
+        const g1 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 1)?.score || 0;
+        const g2 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 2)?.score || 0;
+        const g3 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 3)?.score || 0;
+
+        if (g1 > 0) { t1Total += g1; t1Count++; }
+        if (g2 > 0) { t2Total += g2; t2Count++; }
+        if (g3 > 0) { t3Total += g3; t3Count++; }
+      });
+
+      const t1 = t1Count > 0 ? Math.round(t1Total / t1Count) : 0;
+      const t2 = t2Count > 0 ? Math.round(t2Total / t2Count) : 0;
+      const t3 = t3Count > 0 ? Math.round(t3Total / t3Count) : 0;
+
+      const periods = [t1, t2, t3].filter(p => p > 0);
+      const average = periods.length > 0 ? Math.round(periods.reduce((a, b) => a + b, 0) / periods.length) : 0;
 
       return {
         id: s.id,
+        firstName: s.firstName,
+        lastName: s.lastName,
         fullName: `${s.lastName} ${s.firstName}`,
         rude: s.rude,
-        subjects: annualGrades
+        t1, t2, t3,
+        average,
+        status: average >= 51 ? 'APROBADO' : 'REPROBADO'
       };
-    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    });
   }
 
   async getStudentAcademicReport(studentId: number, year: number, schoolId: number) {
@@ -444,7 +487,8 @@ export class GradesService {
           .filter(g => g.score < 51)
           .map(g => finalSubjects.find(sub => sub.id === g.subjectId)?.name || '');
         
-        const avg = enrollment.grades.reduce((acc, curr) => acc + curr.score, 0) / enrollment.grades.length;
+        const grades = enrollment.grades || [];
+        const avg = grades.length > 0 ? grades.reduce((acc, curr) => acc + curr.score, 0) / grades.length : 0;
         if (avg < 51 || failedSubjects.length > 0) {
           return { 
             id: s.id, 
@@ -601,5 +645,85 @@ export class GradesService {
       }
     }
     return results;
+  }
+
+  async registerFullBatch(dto: any, schoolId: number) {
+    const { subjectId, period, students, syncAll, isDirectMode } = dto;
+
+    return this.prisma.$transaction(async (tx) => {
+      const results: any[] = [];
+      
+      for (const s of students) {
+        const { enrollmentId, ser, autoSer, finalScore, evaluations } = s;
+
+        if (!isDirectMode) {
+          // 1. Guardar Dimensiones (SER, AUTO)
+          const subjectIds = syncAll 
+            ? (await tx.subject.findMany({ where: { schoolId: Number(schoolId) }, select: { id: true } })).map(sub => sub.id)
+            : [Number(subjectId)];
+
+          for (const sid of subjectIds) {
+            await tx.dimensionScore.upsert({
+              where: {
+                enrollmentId_subjectId_period: {
+                  enrollmentId: Number(enrollmentId),
+                  subjectId: Number(sid),
+                  period: Number(period),
+                }
+              },
+              update: { ser: Number(ser), autoSer: Number(autoSer) },
+              create: { 
+                enrollmentId: Number(enrollmentId), 
+                subjectId: Number(sid), 
+                period: Number(period), 
+                ser: Number(ser), 
+                autoSer: Number(autoSer) 
+              }
+            });
+          }
+
+          // 2. Guardar Evaluaciones Dinámicas
+          for (const ev of evaluations) {
+            await tx.evaluationScore.upsert({
+              where: {
+                evaluationId_enrollmentId: {
+                  evaluationId: Number(ev.evaluationId),
+                  enrollmentId: Number(enrollmentId),
+                }
+              },
+              update: { score: Number(ev.score) },
+              create: { 
+                evaluationId: Number(ev.evaluationId), 
+                enrollmentId: Number(enrollmentId), 
+                score: Number(ev.score) 
+              }
+            });
+          }
+        }
+
+        // 3. Guardar Calificación Final
+        const res = await tx.grade.upsert({
+          where: { 
+            enrollmentId_subjectId_period: { 
+              enrollmentId: Number(enrollmentId), 
+              subjectId: Number(subjectId), 
+              period: Number(period) 
+            } 
+          },
+          update: { score: Number(finalScore) },
+          create: { 
+            enrollmentId: Number(enrollmentId), 
+            subjectId: Number(subjectId), 
+            period: Number(period), 
+            score: Number(finalScore) 
+          }
+        });
+        results.push(res);
+      }
+      
+      return results;
+    }, {
+      timeout: 30000 
+    });
   }
 }
