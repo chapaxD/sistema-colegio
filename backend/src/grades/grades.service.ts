@@ -1,67 +1,109 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service.js';
 import { CreateGradeDto } from './dto/create-grade.dto.js';
 import { CreateEvaluationDto, SetEvaluationScoreDto, SetDimensionScoreDto } from './dto/detailed-grades.dto.js';
 
 @Injectable()
 export class GradesService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
-  private async checkTeacherAssignment(userId: number, courseId: number, subjectId: number, schoolId: number) {
-    const user = await this.prisma.user.findFirst({ where: { id: userId, schoolId } });
-    if (!user) throw new BadRequestException('Usuario no válido para esta institución');
-    if (user.role === 'ADMIN') return;
+  async createEvaluation(dto: CreateEvaluationDto, userId: number, schoolId: number) {
+    // Verificar que la materia pertenezca al colegio
+    const subject = await this.prisma.subject.findFirst({
+      where: { id: dto.subjectId, schoolId }
+    });
+    if (!subject) throw new NotFoundException('Materia no encontrada');
 
-    const assignment = await this.prisma.subjectAssignment.findFirst({
-      where: {
-        teacher: { userId },
-        courseId,
-        subjectId,
-        schoolId
+    return this.prisma.evaluation.create({
+      data: {
+        title: dto.title,
+        dimension: dto.dimension,
+        courseId: dto.courseId,
+        subjectId: dto.subjectId,
+        period: dto.period,
       }
     });
-
-    if (!assignment) {
-      throw new BadRequestException('No tiene permiso para gestionar esta materia/curso');
-    }
   }
 
-  // --- Dimensiones Fijas (SER, DECIDIR, AUTO) ---
-  async setDimensionScores(dto: SetDimensionScoreDto, userId: number, schoolId: number) {
-    const enrollment = await this.prisma.enrollment.findFirst({ where: { id: dto.enrollmentId, schoolId } });
-    if (!enrollment) throw new BadRequestException('Inscripción no encontrada');
-    
-    if (dto.syncAll) {
-      const subjects = await this.prisma.subject.findMany({ where: { schoolId } });
-      const operations = subjects.map(s => 
-        this.prisma.dimensionScore.upsert({
-          where: {
-            enrollmentId_subjectId_period: {
-              enrollmentId: dto.enrollmentId,
-              subjectId: s.id,
-              period: dto.period,
-            },
-          },
-          update: { ser: dto.ser, autoSer: dto.autoSer },
-          create: { enrollmentId: dto.enrollmentId, subjectId: s.id, period: dto.period, ser: dto.ser, autoSer: dto.autoSer },
-        })
-      );
-      return this.prisma.$transaction(operations);
+  async removeEvaluation(id: number, userId: number, schoolId: number) {
+    const evaluation = await this.prisma.evaluation.findUnique({
+      where: { id },
+      include: { subject: true }
+    });
+
+    if (!evaluation || evaluation.subject.schoolId !== schoolId) {
+      throw new NotFoundException('Evaluación no encontrada');
     }
 
-    await this.checkTeacherAssignment(userId, enrollment.courseId, dto.subjectId, schoolId);
-    
-    return this.prisma.dimensionScore.upsert({
+    // Primero borrar los puntajes asociados
+    await this.prisma.evaluationScore.deleteMany({
+      where: { evaluationId: id }
+    });
+
+    return this.prisma.evaluation.delete({
+      where: { id }
+    });
+  }
+
+  async setEvaluationScore(dto: SetEvaluationScoreDto, userId: number, schoolId: number) {
+    return this.prisma.$transaction(async (tx) => {
+      const score = await tx.evaluationScore.upsert({
+        where: {
+          evaluationId_enrollmentId: {
+            evaluationId: dto.evaluationId,
+            enrollmentId: dto.enrollmentId,
+          }
+        },
+        update: { score: dto.score },
+        create: {
+          evaluationId: dto.evaluationId,
+          enrollmentId: dto.enrollmentId,
+          score: dto.score,
+        }
+      });
+
+      // Recalcular el promedio de la dimensión y actualizar Grade
+      await this.updateSubjectGrade(dto.enrollmentId, dto.evaluationId, tx);
+
+      return score;
+    });
+  }
+
+  async getEvaluationsWithScores(courseId: number, subjectId: number, period: number, schoolId: number) {
+    return this.prisma.evaluation.findMany({
+      where: { courseId, subjectId, period },
+      include: {
+        scores: true
+      }
+    });
+  }
+
+  async setDimensionScores(dto: SetDimensionScoreDto, userId: number, schoolId: number) {
+    const res = await this.prisma.dimensionScore.upsert({
       where: {
         enrollmentId_subjectId_period: {
           enrollmentId: dto.enrollmentId,
           subjectId: dto.subjectId,
           period: dto.period,
-        },
+        }
       },
-      update: { ser: dto.ser, autoSer: dto.autoSer },
-      create: { enrollmentId: dto.enrollmentId, subjectId: dto.subjectId, period: dto.period, ser: dto.ser, autoSer: dto.autoSer },
+      update: {
+        ser: dto.ser,
+        autoSer: dto.autoSer,
+      },
+      create: {
+        enrollmentId: dto.enrollmentId,
+        subjectId: dto.subjectId,
+        period: dto.period,
+        ser: dto.ser,
+        autoSer: dto.autoSer,
+      }
     });
+    
+    // Actualizar la nota final del trimestre para esta materia
+    await this.updateSubjectGradeManual(dto.enrollmentId, dto.subjectId, dto.period);
+    
+    return res;
   }
 
   async getDimensionScores(courseId: number, subjectId: number, period: number, schoolId: number) {
@@ -69,111 +111,104 @@ export class GradesService {
       where: {
         subjectId,
         period,
-        enrollment: { courseId, schoolId }
+        enrollment: { courseId }
       }
     });
   }
 
-  // --- Evaluaciones Dinámicas (SABER, HACER) ---
-  async createEvaluation(dto: CreateEvaluationDto, userId: number, schoolId: number) {
-    await this.checkTeacherAssignment(userId, dto.courseId, dto.subjectId, schoolId);
-    return this.prisma.evaluation.create({ data: dto });
-  }
+  private async updateSubjectGrade(enrollmentId: number, evaluationId: number, tx: any) {
+    const evaluation = await tx.evaluation.findUnique({ where: { id: evaluationId } });
+    const { subjectId, period } = evaluation;
 
-  async removeEvaluation(id: number, userId: number, schoolId: number) {
-    const evalItem = await this.prisma.evaluation.findUnique({
-      where: { id },
-      include: { course: true }
+    // 1. Obtener todas las dimensiones con sus promedios
+    const evaluations = await tx.evaluation.findMany({
+      where: { courseId: evaluation.courseId, subjectId, period },
+      include: { scores: { where: { enrollmentId } } }
     });
-    if (evalItem) {
-      if (evalItem.course.schoolId !== schoolId) throw new BadRequestException('No autorizado');
-      await this.checkTeacherAssignment(userId, evalItem.courseId, evalItem.subjectId, schoolId);
-    }
-    return this.prisma.evaluation.delete({ where: { id } });
-  }
 
-  async setEvaluationScore(dto: SetEvaluationScoreDto, userId: number, schoolId: number) {
-    const evalItem = await this.prisma.evaluation.findUnique({
-      where: { id: dto.evaluationId },
-      include: { course: true }
-    });
-    if (!evalItem || evalItem.course.schoolId !== schoolId) throw new BadRequestException('No autorizado');
+    const dimensions = ['SABER', 'HACER', 'DECIDIR'];
+    let totalScore = 0;
 
-    if (dto.syncAll && evalItem.dimension === 'SER') {
-      const subjects = await this.prisma.subject.findMany({ where: { schoolId } });
-      const operations: any[] = [];
-
-      for (const s of subjects) {
-        // Buscar si ya existe una evaluación con el mismo título (limpiando espacios)
-        let targetEval = await this.prisma.evaluation.findFirst({
-          where: { 
-            title: evalItem.title.trim(), 
-            subjectId: s.id, 
-            period: evalItem.period, 
-            courseId: evalItem.courseId 
-          }
-        });
-
-        // Si no existe, crearla con el título limpio
-        if (!targetEval) {
-          targetEval = await this.prisma.evaluation.create({
-            data: { 
-              title: evalItem.title.trim(), 
-              dimension: evalItem.dimension, 
-              subjectId: s.id, 
-              period: evalItem.period, 
-              courseId: evalItem.courseId 
-            }
-          });
-        }
-
-        operations.push(this.prisma.evaluationScore.upsert({
-          where: { evaluationId_enrollmentId: { evaluationId: targetEval.id, enrollmentId: dto.enrollmentId } },
-          update: { score: dto.score },
-          create: { evaluationId: targetEval.id, enrollmentId: dto.enrollmentId, score: dto.score }
-        }));
+    for (const dim of dimensions) {
+      const dimEvals = evaluations.filter(e => e.dimension === dim);
+      if (dimEvals.length > 0) {
+        const sum = dimEvals.reduce((acc, curr) => acc + (curr.scores[0]?.score || 0), 0);
+        const avg = Math.round(sum / dimEvals.length);
+        totalScore += avg;
       }
-      return this.prisma.$transaction(operations);
     }
 
-    await this.checkTeacherAssignment(userId, evalItem.courseId, evalItem.subjectId, schoolId);
-    return this.prisma.evaluationScore.upsert({
-      where: {
-        evaluationId_enrollmentId: {
-          evaluationId: dto.evaluationId,
-          enrollmentId: dto.enrollmentId,
-        },
-      },
-      update: { score: dto.score },
-      create: {
-        evaluationId: dto.evaluationId,
-        enrollmentId: dto.enrollmentId,
-        score: dto.score
-      },
+    // 2. Sumar SER y AUTO-SER
+    const dimScore = await tx.dimensionScore.findUnique({
+      where: { enrollmentId_subjectId_period: { enrollmentId, subjectId, period } }
+    });
+
+    if (dimScore) {
+      totalScore += (dimScore.ser || 0) + (dimScore.autoSer || 0);
+    }
+
+    // 3. Upsert en Grade
+    await tx.grade.upsert({
+      where: { enrollmentId_subjectId_period: { enrollmentId, subjectId, period } },
+      update: { score: totalScore },
+      create: { enrollmentId, subjectId, period, score: totalScore }
     });
   }
 
-  async getEvaluationsWithScores(courseId: number, subjectId: number, period: number, schoolId: number) {
-    return this.prisma.evaluation.findMany({
+  private async updateSubjectGradeManual(enrollmentId: number, subjectId: number, period: number) {
+    const enrollment = await this.prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: { course: true }
+    });
+
+    if (!enrollment) return;
+
+    const evaluations = await this.prisma.evaluation.findMany({
+      where: { courseId: enrollment.courseId, subjectId, period },
+      include: { scores: { where: { enrollmentId } } }
+    });
+
+    const dimensions = ['SABER', 'HACER', 'DECIDIR'];
+    let totalScore = 0;
+
+    for (const dim of dimensions) {
+      const dimEvals = evaluations.filter(e => e.dimension === dim);
+      if (dimEvals.length > 0) {
+        const sum = dimEvals.reduce((acc, curr) => acc + (curr.scores[0]?.score || 0), 0);
+        const avg = Math.round(sum / dimEvals.length);
+        totalScore += avg;
+      }
+    }
+
+    const dimScore = await this.prisma.dimensionScore.findUnique({
+      where: { enrollmentId_subjectId_period: { enrollmentId, subjectId, period } }
+    });
+
+    if (dimScore) {
+      totalScore += (dimScore.ser || 0) + (dimScore.autoSer || 0);
+    }
+
+    await this.prisma.grade.upsert({
+      where: { enrollmentId_subjectId_period: { enrollmentId, subjectId, period } },
+      update: { score: totalScore },
+      create: { enrollmentId, subjectId, period, score: totalScore }
+    });
+  }
+
+  async getGradesBySubject(courseId: number, subjectId: number, period: number, schoolId: number) {
+    return this.prisma.grade.findMany({
       where: {
-        courseId,
         subjectId,
         period,
-        course: { schoolId }
+        enrollment: { courseId }
       },
       include: {
-        scores: true
+        enrollment: { include: { student: true } }
       }
     });
   }
 
   async registerGrade(dto: CreateGradeDto, userId: number, schoolId: number) {
-    // Para esta nota final, necesitamos verificar la inscripción para sacar el courseId
-    const enrollment = await this.prisma.enrollment.findFirst({ where: { id: dto.enrollmentId, schoolId } });
-    if (enrollment) {
-      await this.checkTeacherAssignment(userId, enrollment.courseId, dto.subjectId, schoolId);
-    }
-
     return this.prisma.grade.upsert({
       where: {
         enrollmentId_subjectId_period: {
@@ -183,237 +218,153 @@ export class GradesService {
         },
       },
       update: { score: dto.score },
-      create: dto,
-    });
-  }
-
-  async getGradesBySubject(courseId: number, subjectId: number, period: number, schoolId: number) {
-    return this.prisma.grade.findMany({
-      where: {
-        subjectId,
-        period,
-        enrollment: { courseId, schoolId }
-      }
+      create: { ...dto },
     });
   }
 
   async registerBatch(grades: CreateGradeDto[], userId: number, schoolId: number) {
-    if (grades.length === 0) return [];
-
-    // Verificar permiso para el primero (asumimos que el batch es para la misma materia/curso)
-    const enrollment = await this.prisma.enrollment.findFirst({ where: { id: grades[0].enrollmentId, schoolId } });
-    if (enrollment) {
-      await this.checkTeacherAssignment(userId, enrollment.courseId, grades[0].subjectId, schoolId);
+    const results: any[] = [];
+    for (const g of grades) {
+      const res = await this.registerGrade(g, userId, schoolId);
+      results.push(res);
     }
-
-    const operations = grades.map(dto =>
-      this.prisma.grade.upsert({
-        where: {
-          enrollmentId_subjectId_period: {
-            enrollmentId: dto.enrollmentId,
-            subjectId: dto.subjectId,
-            period: dto.period,
-          },
-        },
-        update: { score: dto.score },
-        create: dto,
-      })
-    );
-    return this.prisma.$transaction(operations);
+    return results;
   }
 
-  async getStudentAcademicReport(studentId: number, year: number, schoolId: number) {
-    const enrollment = await this.prisma.enrollment.findFirst({
-      where: { studentId, academicYear: { year }, schoolId },
-      include: {
-        student: true,
-        course: true,
-        school: true,
-        grades: {
-          include: { subject: true },
-        },
-      },
-    });
-
-    if (!enrollment) {
-      throw new BadRequestException('Estudiante no inscrito en la gestión seleccionada');
-    }
-
-    // Obtener todas las materias para asegurar que el boletín esté completo
-    const allSubjects = await this.prisma.subject.findMany({ where: { schoolId } });
-    const reportBySubject = {};
-
-    allSubjects.forEach(s => {
-      reportBySubject[s.name] = { t1: 0, t2: 0, t3: 0, average: 0, status: 'SIN NOTAS' };
-    });
-
-    // Llenar con las notas existentes
-    enrollment.grades.forEach((grade) => {
-      const subjectName = grade.subject.name;
-      if (reportBySubject[subjectName]) {
-        reportBySubject[subjectName][`t${grade.period}`] = grade.score;
-      }
-    });
-
-    // Calcular promedios
-    Object.keys(reportBySubject).forEach((subject) => {
-      const { t1, t2, t3 } = reportBySubject[subject];
-      const count = [t1, t2, t3].filter(n => n > 0).length;
-      reportBySubject[subject].average = count > 0 ? (t1 + t2 + t3) / count : 0;
-      reportBySubject[subject].status = reportBySubject[subject].average >= 51 ? 'APROBADO' : 'REPROBADO';
-    });
-
-    return {
-      school: enrollment.school.name,
-      student: `${enrollment.student.lastName} ${enrollment.student.firstName}`,
-      course: `${enrollment.course.level} ${enrollment.course.parallel}`,
-      year,
-      subjects: reportBySubject,
-    };
-  }
   async getCourseTrimesterCentralizer(courseId: number, period: number, schoolId: number) {
-    // Obtener la gestión más reciente si no se especifica (aunque aquí no tenemos parámetro de año)
-    const latestYear = await this.prisma.academicYear.findFirst({
-      where: { schoolId },
-      orderBy: { year: 'desc' }
-    });
-
     const students = await this.prisma.student.findMany({
       where: {
         schoolId,
-        isActive: true as any,
-        enrollments: { some: { courseId, academicYearId: latestYear?.id } }
+        enrollments: { some: { courseId } }
       },
       include: {
         enrollments: {
-          where: { courseId, academicYearId: latestYear?.id },
+          where: { courseId },
           include: {
-            grades: { where: { period }, include: { subject: true } }
+            grades: { where: { period } }
           }
         }
       }
     });
 
-    // Solo obtener materias que tengan alguna relación con este curso o todas las del colegio
-    // Para ser precisos, deberíamos filtrar por materias asignadas al curso en este año
-    const subjects = await this.prisma.subject.findMany({ 
+    const subjects = await this.prisma.subject.findMany({
+      where: { schoolId },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    return students.map(s => {
+      const enrollment = s.enrollments[0];
+      const studentGrades = subjects.reduce((acc, sub) => {
+        const grade = enrollment.grades.find(g => g.subjectId === sub.id);
+        acc[sub.name] = grade ? grade.score : 0;
+        return acc;
+      }, {});
+
+      return {
+        id: s.id,
+        fullName: `${s.lastName} ${s.firstName}`,
+        rude: s.rude,
+        grades: studentGrades
+      };
+    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }
+
+  async getCourseAnnualCentralizer(courseId: number, schoolId: number, subjectId?: number) {
+    const students = await this.prisma.student.findMany({
+      where: {
+        schoolId,
+        enrollments: { some: { courseId } }
+      },
+      include: {
+        enrollments: {
+          where: { courseId },
+          include: {
+            grades: true
+          }
+        }
+      }
+    });
+
+    const subjects = await this.prisma.subject.findMany({
       where: { 
         schoolId,
-        assignments: { some: { courseId, academicYearId: latestYear?.id } }
+        ...(subjectId ? { id: subjectId } : {})
       },
       orderBy: { sortOrder: 'asc' }
     });
 
-    // Si no hay asignaciones (colegio nuevo), fallback a todas las materias
-    const finalSubjects = subjects.length > 0 
-      ? subjects 
-      : await this.prisma.subject.findMany({ where: { schoolId }, orderBy: { sortOrder: 'asc' } });
-
-    const data = students.map(s => {
+    return students.map(s => {
       const enrollment = s.enrollments[0];
-      if (!enrollment) return null;
-
-      const gradesBySubject = {};
-      enrollment.grades.forEach(g => {
-        gradesBySubject[g.subjectId] = g.score;
-      });
-
-      const totalScore = enrollment.grades.reduce((acc, curr) => acc + curr.score, 0);
-      // Dividir solo por las materias que realmente existen para este curso
-      const avgScore = finalSubjects.length > 0 ? totalScore / finalSubjects.length : 0;
+      const annualGrades = subjects.reduce((acc, sub) => {
+        const t1 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 1)?.score || 0;
+        const t2 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 2)?.score || 0;
+        const t3 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 3)?.score || 0;
+        const avg = Math.round((t1 + t2 + t3) / ( (t1?1:0) + (t2?1:0) + (t3?1:0) || 1 ));
+        
+        acc[sub.name] = { t1, t2, t3, annual: avg };
+        return acc;
+      }, {});
 
       return {
         id: s.id,
         fullName: `${s.lastName} ${s.firstName}`,
-        grades: gradesBySubject,
-        average: Math.round(avgScore),
-        status: avgScore >= 51 ? 'APROBADO' : 'REPROBADO'
+        rude: s.rude,
+        subjects: annualGrades
       };
-    }).filter((s): s is any => s !== null).sort((a, b) => a.fullName.localeCompare(b.fullName));
-
-    return { subjects: finalSubjects, students: data };
+    }).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }
 
-  async getCourseAnnualCentralizer(courseId: number, schoolId: number, subjectId?: number) {
-    const latestYear = await this.prisma.academicYear.findFirst({
-      where: { schoolId },
-      orderBy: { year: 'desc' }
-    });
-
-    const students = await this.prisma.student.findMany({
-      where: {
-        schoolId,
-        isActive: true as any,
-        enrollments: { some: { courseId, academicYearId: latestYear?.id } }
-      },
+  async getStudentAcademicReport(studentId: number, year: number, schoolId: number) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, schoolId },
       include: {
         enrollments: {
-          where: { courseId, academicYearId: latestYear?.id },
+          where: { academicYear: { year } },
           include: {
-            grades: {
-              where: subjectId ? { subjectId } : undefined,
-              include: { subject: true }
-            }
+            course: true,
+            grades: true
           }
         }
       }
     });
 
-    // Contar solo materias asignadas al curso para el promedio real
-    const totalSubjects = await this.prisma.subject.count({ 
-      where: { 
-        schoolId,
-        assignments: { some: { courseId, academicYearId: latestYear?.id } }
-      } 
+    if (!student || !student.enrollments.length) {
+      throw new NotFoundException('Estudiante no encontrado para este año');
+    }
+
+    const enrollment = student.enrollments[0];
+    const subjects = await this.prisma.subject.findMany({
+      where: { schoolId },
+      orderBy: { sortOrder: 'asc' }
     });
-    
-    // Fallback si no hay asignaciones
-    const subjectCount = totalSubjects > 0 
-      ? totalSubjects 
-      : await this.prisma.subject.count({ where: { schoolId } });
 
-    return students.map(s => {
-      const enrollment = s.enrollments[0];
-      if (!enrollment) return null;
+    const reportData = subjects.map(sub => {
+      const t1 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 1)?.score || null;
+      const t2 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 2)?.score || null;
+      const t3 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 3)?.score || null;
       
-      const scores = { t1: 0, t2: 0, t3: 0 };
-
-      if (subjectId) {
-        enrollment.grades.forEach(g => {
-          scores[`t${g.period}`] = g.score;
-        });
-      } else {
-        const periodData = {
-          1: { sum: 0, count: 0 },
-          2: { sum: 0, count: 0 },
-          3: { sum: 0, count: 0 }
-        };
-
-        enrollment.grades.forEach(g => {
-          periodData[g.period].sum += g.score;
-          periodData[g.period].count++;
-        });
-
-        [1, 2, 3].forEach(p => {
-          scores[`t${p}`] = subjectCount > 0 ? Math.round(periodData[p].sum / subjectCount) : 0;
-        });
-      }
-
-      const total = Object.values(scores).reduce((acc, curr) => acc + curr, 0);
-      const avg = total / 3;
+      const scores = [t1, t2, t3].filter(s => s !== null);
+      const average = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
 
       return {
-        id: s.id,
-        fullName: `${s.lastName} ${s.firstName}`,
-        ...scores,
-        average: Math.round(avg),
-        status: avg >= 51 ? 'APROBADO' : 'REPROBADO'
+        name: sub.name,
+        t1, t2, t3,
+        average
       };
-    }).filter((s): s is any => s !== null).sort((a, b) => a.fullName.localeCompare(b.fullName));
+    });
+
+    return {
+      student: `${student.lastName} ${student.firstName}`,
+      course: `${enrollment.course.level} ${enrollment.course.parallel}`,
+      subjects: reportData.reduce((acc, curr) => {
+        acc[curr.name] = { t1: curr.t1, t2: curr.t2, t3: curr.t3, average: curr.average };
+        return acc;
+      }, {})
+    };
   }
 
-  async getPedagogicalReportData(courseId: number, schoolId: number) {
-    console.log(`Generating Pedagogical Report for Course: ${courseId}, School: ${schoolId}`);
+  async getPedagogicalReportData(courseId: number, period: number, schoolId: number) {
+    console.log(`Generating Pedagogical Report for Course: ${courseId}, Period: ${period}, School: ${schoolId}`);
     try {
       if (!courseId || !schoolId) {
         throw new Error('CourseId or SchoolId is missing');
@@ -424,24 +375,27 @@ export class GradesService {
         orderBy: { year: 'desc' }
       });
 
+      if (!latestYear) {
+        throw new Error('No se encontró una gestión escolar activa para este colegio');
+      }
+
       const students = await this.prisma.student.findMany({
         where: {
           schoolId: Number(schoolId),
-          enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear?.id } }
+          enrollments: { some: { courseId: Number(courseId), academicYearId: latestYear.id } }
         },
         include: {
           enrollments: {
-            where: { courseId: Number(courseId), academicYearId: latestYear?.id },
+            where: { courseId: Number(courseId), academicYearId: latestYear.id },
             include: {
               attendances: true,
-              grades: true
+              grades: { where: { period: Number(period) } },
+              learningDifficulties: { where: { period: Number(period) } }
             }
           }
         }
-      });
+      } as any);
 
-      // Importante: Casteamos a any para que TS permita el acceso a gender/phone
-      // mientras se sincronizan los tipos generados de Prisma.
       const studentList = students as any[];
 
       const stats = {
@@ -477,7 +431,6 @@ export class GradesService {
         orderBy: { name: 'asc' }
       });
 
-      // Si por alguna razón no hay asignaciones aún, traer todas las del colegio como fallback
       const finalSubjects = subjects.length > 0 ? subjects : await this.prisma.subject.findMany({
         where: { schoolId: Number(schoolId) },
         orderBy: { name: 'asc' }
@@ -487,7 +440,6 @@ export class GradesService {
         const enrollment = s.enrollments?.[0];
         if (!enrollment || !enrollment.grades || enrollment.grades.length === 0) return null;
         
-        // Materias reprobadas (< 51)
         const failedSubjects = (enrollment.grades || [])
           .filter(g => g.score < 51)
           .map(g => finalSubjects.find(sub => sub.id === g.subjectId)?.name || '');
@@ -505,12 +457,10 @@ export class GradesService {
         return null;
       }).filter(Boolean);
 
-      // Alumnos con rendimiento bajo (51-60) para sugerir en Dificultades Leve
       const strugglingStudents = studentList.map(s => {
         const enrollment = s.enrollments?.[0];
         if (!enrollment || !enrollment.grades) return null;
         
-        // Materias en riesgo (51-60)
         const lowSubjects = (enrollment.grades || [])
           .filter(g => g.score >= 51 && g.score <= 60)
           .map(g => finalSubjects.find(sub => sub.id === g.subjectId)?.name || '');
@@ -526,10 +476,130 @@ export class GradesService {
         return null;
       }).filter(Boolean);
 
-      return { stats, attendanceIssues, reprobados, subjects: finalSubjects, strugglingStudents };
+      // Cargar reporte pedagógico guardado
+      const savedReport = await (this.prisma as any).pedagogicalReport.findUnique({
+        where: {
+          courseId_period_academicYearId: {
+            courseId: Number(courseId),
+            period: Number(period),
+            academicYearId: latestYear.id
+          }
+        }
+      });
+
+      // Mapear dificultades guardadas
+      const savedDifficulties = studentList.map(s => {
+        const diff = s.enrollments?.[0]?.learningDifficulties?.[0];
+        if (!diff) return null;
+        return {
+          studentId: s.id,
+          fullName: `${s.lastName} ${s.firstName}`,
+          subjects: diff.subjects,
+          notes: diff.description
+        };
+      }).filter(Boolean);
+
+      return { 
+        stats, 
+        attendanceIssues, 
+        reprobados, 
+        subjects: finalSubjects, 
+        strugglingStudents,
+        savedReport,
+        savedDifficulties
+      };
     } catch (err) {
       console.error('FATAL ERROR in getPedagogicalReportData:', err.message);
       throw err;
     }
+  }
+
+  async savePedagogicalReport(dto: any, schoolId: number) {
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId: Number(schoolId) },
+      orderBy: { year: 'desc' }
+    });
+
+    if (!latestYear) {
+      throw new Error('No se puede guardar el reporte: No existe una gestión escolar activa');
+    }
+
+    return (this.prisma as any).pedagogicalReport.upsert({
+      where: {
+        courseId_period_academicYearId: {
+          courseId: Number(dto.courseId),
+          period: Number(dto.period),
+          academicYearId: latestYear.id
+        }
+      },
+      update: {
+        area: dto.area,
+        avance: dto.avance,
+        aprovechamiento: dto.aprovechamiento,
+        logros: dto.logros,
+        dificultades: dto.dificultades,
+        sugerencias: dto.sugerencias,
+        subjectsData: dto.subjectsData
+      },
+      create: {
+        courseId: Number(dto.courseId),
+        period: Number(dto.period),
+        academicYearId: latestYear.id,
+        schoolId: Number(schoolId),
+        area: dto.area,
+        avance: dto.avance,
+        aprovechamiento: dto.aprovechamiento,
+        logros: dto.logros,
+        dificultades: dto.dificultades,
+        sugerencias: dto.sugerencias,
+        subjectsData: dto.subjectsData
+      }
+    });
+  }
+
+  async saveLearningDifficulties(dto: any, schoolId: number) {
+    const latestYear = await this.prisma.academicYear.findFirst({
+      where: { schoolId: Number(schoolId) },
+      orderBy: { year: 'desc' }
+    });
+
+    if (!latestYear) {
+      throw new Error('No se pueden guardar las dificultades: No existe una gestión escolar activa');
+    }
+
+    const results: any[] = [];
+    for (const diff of dto.difficulties) {
+      const enrollment = await this.prisma.enrollment.findUnique({
+        where: {
+          studentId_academicYearId: {
+            studentId: Number(diff.studentId),
+            academicYearId: latestYear.id
+          }
+        }
+      });
+
+      if (enrollment) {
+        const res = await (this.prisma as any).learningDifficulty.upsert({
+          where: {
+            enrollmentId_period: {
+              enrollmentId: enrollment.id,
+              period: Number(dto.period)
+            }
+          },
+          update: {
+            subjects: diff.subjects,
+            description: diff.notes
+          },
+          create: {
+            enrollmentId: enrollment.id,
+            period: Number(dto.period),
+            subjects: diff.subjects,
+            description: diff.notes
+          }
+        });
+        results.push(res);
+      }
+    }
+    return results;
   }
 }

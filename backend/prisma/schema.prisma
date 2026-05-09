@@ -24,6 +24,7 @@ model School {
   students         Student[]
   subjects         Subject[]
   assignments      SubjectAssignment[]
+  pedagogicalReports PedagogicalReport[]
   users            User[]
 }
 
@@ -70,6 +71,7 @@ model Course {
   enrollments Enrollment[]
   evaluations Evaluation[]
   assignments SubjectAssignment[]
+  pedagogicalReports PedagogicalReport[]
 
   @@unique([level, parallel, schoolId], name: "level_parallel_school")
 }
@@ -96,6 +98,7 @@ model AcademicYear {
   school      School              @relation(fields: [schoolId], references: [id])
   enrollments Enrollment[]
   assignments SubjectAssignment[]
+  pedagogicalReports PedagogicalReport[]
 
   @@unique([year, schoolId])
 }
@@ -115,6 +118,7 @@ model Enrollment {
   student          Student           @relation(fields: [studentId], references: [id])
   evaluationScores EvaluationScore[]
   grades           Grade[]
+  learningDifficulties LearningDifficulty[]
 
   @@unique([studentId, academicYearId])
 }
@@ -211,4 +215,39 @@ enum Role {
   ADMIN
   TEACHER
   SUPER_ADMIN
+}
+
+model PedagogicalReport {
+  id              Int          @id @default(autoincrement())
+  courseId        Int
+  period          Int
+  academicYearId  Int
+  schoolId        Int
+  area            String?
+  avance          String?
+  aprovechamiento String?
+  logros          String?
+  dificultades    String?
+  sugerencias     String?
+  subjectsData    Json?        // Tabla de avance de materias
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  course          Course       @relation(fields: [courseId], references: [id])
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id])
+  school          School       @relation(fields: [schoolId], references: [id])
+
+  @@unique([courseId, period, academicYearId])
+}
+
+model LearningDifficulty {
+  id           Int        @id @default(autoincrement())
+  enrollmentId Int
+  period       Int
+  subjects     String     @default("")
+  description  String     @default("") @db.Text
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@unique([enrollmentId, period])
 }

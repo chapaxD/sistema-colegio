@@ -103,8 +103,19 @@ export class GradesController {
   @Get('pedagogical/:courseId')
   async getPedagogicalReport(
     @Param('courseId', ParseIntPipe) courseId: number,
+    @Query('period', ParseIntPipe) period: number,
     @Req() req
   ) {
-    return this.gradesService.getPedagogicalReportData(courseId, req.user.schoolId);
+    return this.gradesService.getPedagogicalReportData(courseId, period, req.user.schoolId);
+  }
+
+  @Post('pedagogical/save')
+  async savePedagogicalReport(@Body() dto: any, @Req() req) {
+    return this.gradesService.savePedagogicalReport(dto, req.user.schoolId);
+  }
+
+  @Post('difficulties/save')
+  async saveLearningDifficulties(@Body() dto: any, @Req() req) {
+    return this.gradesService.saveLearningDifficulties(dto, req.user.schoolId);
   }
 }

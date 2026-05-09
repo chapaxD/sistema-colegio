@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
-import { Search, Printer, FileText, Loader2, Download, FileDown, Trash2 } from 'lucide-vue-next'
+import { Search, Printer, FileText, Loader2, Download, FileDown, Trash2, Save } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 
@@ -30,7 +30,8 @@ const manualData = ref({
   learningIssuesIds: [],
   selectedSubjectsIds: [],
   difficultiesList: [], // { studentId, fullName, subjects: '', notes: '' }
-  subjectAvance: {}
+  subjectAvance: {},
+  reportDate: new Date().toISOString().split('T')[0]
 })
 
 const settings = ref({
@@ -225,35 +226,102 @@ const generatePDF = () => {
 const fetchPedagogicalData = async () => {
   if (!selectedCourse.value) return
   loading.value = true
-  pedagogicalData.value = null
+  error.value = ''
   try {
-    const res = await api.get(`/grades/pedagogical/${selectedCourse.value}`)
+    const res = await api.get(`/grades/pedagogical/${selectedCourse.value}?period=${selectedTrimester.value}`)
     pedagogicalData.value = res.data
     
-    // Inicializar tabla de avance si hay materias
-    if (res.data.subjects) {
-      manualData.value.selectedSubjectsIds = res.data.subjects.map(s => s.id)
+    // Cargar datos guardados si existen
+    if (res.data.savedReport) {
+      const saved = res.data.savedReport;
+      manualData.value.area = saved.area || '';
+      manualData.value.avance = saved.avance || '';
+      manualData.value.aprovechamiento = saved.aprovechamiento || '';
+      manualData.value.logros = saved.logros || '';
+      manualData.value.dificultades = saved.dificultades || '';
+      manualData.value.sugerencias = saved.sugerencias || '';
+      if (saved.subjectsData) {
+        manualData.value.subjectAvance = saved.subjectsData;
+        manualData.value.selectedSubjectsIds = Object.keys(saved.subjectsData).map(id => parseInt(id));
+      }
+    } else {
+      // Reset si no hay guardado
+      manualData.value.area = '';
+      manualData.value.avance = '';
+      manualData.value.aprovechamiento = '';
+      manualData.value.logros = '';
+      manualData.value.dificultades = '';
+      manualData.value.sugerencias = '';
+      manualData.value.selectedSubjectsIds = res.data.subjects.map(s => s.id);
+      manualData.value.subjectAvance = {};
       res.data.subjects.forEach(s => {
-        if (!manualData.value.subjectAvance[s.id]) {
-          manualData.value.subjectAvance[s.id] = { prog: '100', avan: '', pend: '' }
-        }
-      })
+        manualData.value.subjectAvance[s.id] = { prog: '100', avan: '0', pend: '100' };
+      });
     }
-    // Inicializar lista de dificultades descriptivas
-    if (res.data.strugglingStudents) {
+
+    // Cargar dificultades guardadas o inicializar
+    if (res.data.savedDifficulties && res.data.savedDifficulties.length > 0) {
+      manualData.value.difficultiesList = res.data.savedDifficulties;
+    } else if (res.data.strugglingStudents) {
       manualData.value.difficultiesList = res.data.strugglingStudents.map(s => ({
         studentId: s.id,
         fullName: s.fullName,
         subjects: s.subjects || '',
         notes: ''
-      }))
+      }));
     } else {
-      manualData.value.difficultiesList = []
+      manualData.value.difficultiesList = [];
     }
   } catch (err) {
     error.value = 'Error al cargar datos del curso'
   } finally {
     loading.value = false
+  }
+}
+
+const savePedagogicalReport = async () => {
+  if (!selectedCourse.value) return;
+  loading.value = true;
+  try {
+    const subjectsData = {};
+    manualData.value.selectedSubjectsIds.forEach(id => {
+      subjectsData[id] = manualData.value.subjectAvance[id];
+    });
+
+    await api.post('/grades/pedagogical/save', {
+      courseId: selectedCourse.value,
+      period: selectedTrimester.value,
+      area: manualData.value.area,
+      avance: manualData.value.avance,
+      aprovechamiento: manualData.value.aprovechamiento,
+      logros: manualData.value.logros,
+      dificultades: manualData.value.dificultades,
+      sugerencias: manualData.value.sugerencias,
+      subjectsData
+    });
+    alert('Reporte guardado correctamente');
+  } catch (err) {
+    console.error(err);
+    alert('Error al guardar el reporte');
+  } finally {
+    loading.value = false;
+  }
+}
+
+const saveLearningDifficulties = async () => {
+  if (!selectedCourse.value) return;
+  loading.value = true;
+  try {
+    await api.post('/grades/difficulties/save', {
+      period: selectedTrimester.value,
+      difficulties: manualData.value.difficultiesList
+    });
+    alert('Dificultades guardadas correctamente');
+  } catch (err) {
+    console.error(err);
+    alert('Error al guardar dificultades');
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -277,14 +345,17 @@ const printDifficultiesReport = () => {
   const rows = manualData.value.difficultiesList.map((item, idx) => `
     <tr>
       <td style="border:1px solid #000;padding:8px;text-align:center;">${idx + 1}</td>
-      <td style="border:1px solid #000;padding:8px;text-align:left;font-weight:bold;">${item.fullName.toUpperCase()}</td>
-      <td style="border:1px solid #000;padding:8px;text-align:center;">${item.subjects.toUpperCase()}</td>
-      <td style="border:1px solid #000;padding:8px;text-align:left;font-size:9pt;">${item.notes}</td>
+      <td style="border:1px solid #000;padding:8px;text-align:left;font-weight:bold;font-size:10pt;">${item.fullName.toUpperCase()}</td>
+      <td style="border:1px solid #000;padding:8px;text-align:center;font-size:9pt;">${item.subjects.toUpperCase()}</td>
+      <td style="border:1px solid #000;padding:8px;text-align:left;font-size:9pt;white-space:pre-wrap;">${item.notes}</td>
     </tr>
   `).join('')
 
-  const html = `
-<!DOCTYPE html>
+  const displayDate = new Date(manualData.value.reportDate + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  const teacherName = settings.value.teacherName || '__________________________';
+  const directorLabel = settings.value.directorName.startsWith('Lic.') ? settings.value.directorName : `Lic. ${settings.value.directorName}`;
+
+  const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -315,10 +386,10 @@ const printDifficultiesReport = () => {
   <div class="main-title">INFORME DE ESTUDIANTES CON DIFICULTADES DE APRENDIZAJES</div>
 
   <div class="memo-info">
-    <div class="memo-row"><span class="memo-label">A:</span> <div class="memo-value">Lic. ${settings.value.directorName} / DIRECTORA DE LA U.E. ${settings.value.schoolName}</div></div>
-    <div class="memo-row"><span class="memo-label">DE:</span> <div class="memo-value">Prof. ${settings.value.teacherName}</div></div>
+    <div class="memo-row"><span class="memo-label">A:</span> <div class="memo-value">${directorLabel} / DIRECTORA DE LA U.E. ${settings.value.schoolName}</div></div>
+    <div class="memo-row"><span class="memo-label">DE:</span> <div class="memo-value">Prof. ${teacherName}</div></div>
     <div class="memo-row"><span class="memo-label">REF.:</span> <div class="memo-value">INFORME DE ESTUDIANTES CON DIFICULTADES DE APRENDIZAJE ${selectedTrimester.value}º TRIMESTRE</div></div>
-    <div class="memo-row"><span class="memo-label">FECHA:</span> <div class="memo-value">${new Date().toLocaleDateString()}</div></div>
+    <div class="memo-row"><span class="memo-label">FECHA:</span> <div class="memo-value">${displayDate}</div></div>
   </div>
 
   <div class="intro-text">
@@ -345,7 +416,7 @@ const printDifficultiesReport = () => {
   <div class="footer-signs">
     <div class="sign-box">
       <div class="sign-line"></div>
-      <p><strong>${settings.value.teacherName}</strong></p>
+      <p><strong>${teacherName}</strong></p>
       <p>PROFESOR(A)</p>
     </div>
     <div class="sign-box">
@@ -626,6 +697,10 @@ const printPedagogical = () => {
           <label>Área (Opcional)</label>
           <input v-model="manualData.area" type="text" class="input-field" placeholder="Ej: MATEMÁTICA" />
         </div>
+        <div class="form-group">
+          <label>Fecha del Informe</label>
+          <input v-model="manualData.reportDate" type="date" class="input-field" />
+        </div>
       </div>
 
       <div v-if="pedagogicalData" class="manual-fields mt-6">
@@ -705,10 +780,14 @@ const printPedagogical = () => {
           </div>
         </div>
         
-        <div class="actions mt-4">
-          <button @click="printPedagogical" class="btn btn-primary w-full">
+        <div class="actions mt-4 flex gap-4">
+          <button @click="savePedagogicalReport" class="btn btn-secondary flex-1">
+            <Save :size="20" />
+            Guardar Reporte
+          </button>
+          <button @click="printPedagogical" class="btn btn-primary flex-1">
             <Printer :size="20" />
-            Generar e Imprimir Informe Pedagógico (2 Páginas)
+            Imprimir Informe Pedagógico
           </button>
         </div>
       </div>
@@ -725,11 +804,15 @@ const printPedagogical = () => {
         </div>
         <div class="form-group">
           <label>Trimestre</label>
-          <select v-model="selectedTrimester" class="input-field">
+          <select v-model="selectedTrimester" @change="fetchPedagogicalData" class="input-field">
             <option :value="1">1º Trimestre</option>
             <option :value="2">2º Trimestre</option>
             <option :value="3">3º Trimestre</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>Fecha del Informe</label>
+          <input v-model="manualData.reportDate" type="date" class="input-field" />
         </div>
       </div>
 
@@ -768,12 +851,16 @@ const printPedagogical = () => {
         </div>
 
         <div class="flex gap-4 mt-6">
-          <button @click="addDifficultyRow" class="btn btn-secondary">
+          <button @click="addDifficultyRow" class="btn btn-outline">
             + Añadir Alumno
+          </button>
+          <button @click="saveLearningDifficulties" class="btn btn-secondary flex-1">
+            <Save :size="20" />
+            Guardar Dificultades
           </button>
           <button @click="printDifficultiesReport" class="btn btn-primary flex-1">
             <Printer :size="20" />
-            Generar Informe de Dificultades
+            Generar e Imprimir Informe
           </button>
         </div>
       </div>
