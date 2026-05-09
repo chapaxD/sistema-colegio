@@ -728,16 +728,18 @@ const printPedagogical = () => {
         </div>
 
         <div class="learning-issues-selector glass-card p-4">
-          <h3 class="text-sm font-bold mb-2">Alumnos con Aprovechamiento Leve (Notas 51-60)</h3>
-          <p class="text-[10px] text-orange-400 mb-2">* Solo se muestran alumnos con materias en riesgo.</p>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-gray-800">Alumnos con Dificultades de Aprendizaje (Reprobados)</h3>
+          </div>
+          <p class="text-sm text-gray-600 mb-4">* Se muestran alumnos con materias reprobadas (notas menores a 51).</p>
           <div class="issues-list grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-            <div v-for="s in pedagogicalData.strugglingStudents" :key="s.id" class="issue-item flex items-center gap-2">
+            <div v-for="s in pedagogicalData.reprobados" :key="s.id" class="issue-item flex items-center gap-2">
               <input type="checkbox" :id="'learn-'+s.id" :value="s.id" v-model="manualData.learningIssuesIds" />
               <label :for="'learn-'+s.id" class="text-xs truncate cursor-pointer">{{ s.fullName }}</label>
             </div>
           </div>
-          <div v-if="!pedagogicalData.strugglingStudents?.length" class="text-xs text-muted py-2 text-center">
-            No se detectaron alumnos con notas bajas (51-60).
+          <div v-if="!pedagogicalData.reprobados?.length" class="text-xs text-muted py-2 text-center">
+            No se detectaron alumnos con materias reprobadas (notas menores a 51).
           </div>
         </div>
 
