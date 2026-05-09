@@ -30,7 +30,9 @@ const newStudent = ref({
   lastName: '',
   gender: 'M',
   phone: '',
-  birthDate: null
+  birthDate: null,
+  courseId: '',
+  academicYearId: ''
 })
 
 onMounted(async () => {
@@ -42,6 +44,9 @@ onMounted(async () => {
     ])
     courses.value = c.data
     years.value = y.data
+    if (years.value.length > 0) {
+      newStudent.value.academicYearId = years.value[0].id
+    }
   } catch (err) {
     console.error('Error loading academic data')
   }
@@ -62,7 +67,16 @@ const openModal = (student = null) => {
   } else {
     isEditing.value = false
     editingId.value = null
-    newStudent.value = { rude: '', firstName: '', lastName: '', gender: 'M', phone: '', birthDate: null }
+    newStudent.value = { 
+      rude: '', 
+      firstName: '', 
+      lastName: '', 
+      gender: 'M', 
+      phone: '', 
+      birthDate: null,
+      courseId: '',
+      academicYearId: years.value[0]?.id || ''
+    }
   }
   showModal.value = true
 }
@@ -74,15 +88,11 @@ const closeModal = () => {
   newStudent.value = { rude: '', firstName: '', lastName: '', gender: 'M', phone: '', birthDate: null }
 }
 
-const filteredStudents = computed(() => {
+const groupedStudents = computed(() => {
+  const groups = {}
+  
+  // 1. Filtrar primero por búsqueda y estado inactivo
   let list = studentStore.students
-  
-  if (selectedCourseFilter.value) {
-    list = list.filter(s => 
-      s.enrollments?.some(e => e.courseId === parseInt(selectedCourseFilter.value))
-    )
-  }
-  
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
     list = list.filter(s => 
@@ -91,8 +101,40 @@ const filteredStudents = computed(() => {
       s.firstName.toLowerCase().includes(q)
     )
   }
+
+  // 2. Si hay un filtro de curso activo, solo mostramos ese grupo
+  if (selectedCourseFilter.value) {
+    if (selectedCourseFilter.value === 'UNENROLLED') {
+      const unenrolled = list.filter(s => !s.enrollments || s.enrollments.length === 0)
+      return { 'Pendientes / Reservas': unenrolled.sort((a, b) => a.lastName.localeCompare(b.lastName)) }
+    }
+    
+    const courseId = parseInt(selectedCourseFilter.value)
+    const course = courses.value.find(c => c.id === courseId)
+    const courseName = course ? `${course.level} ${course.parallel}` : 'Curso Seleccionado'
+    const studentsInCourse = list.filter(s => s.enrollments?.some(e => e.courseId === courseId))
+    return { [courseName]: studentsInCourse.sort((a, b) => a.lastName.localeCompare(b.lastName)) }
+  }
+
+  // 3. Si no hay filtro, agrupar todos
+  list.forEach(student => {
+    let groupName = 'Sin Inscripción'
+    if (student.enrollments?.length > 0) {
+      const mainEnroll = student.enrollments[0]
+      groupName = `${mainEnroll.course.level} ${mainEnroll.course.parallel}`
+    }
+    
+    if (!groups[groupName]) groups[groupName] = []
+    groups[groupName].push(student)
+  })
+
+  // Ordenar estudiantes dentro de cada grupo y ordenar los nombres de los grupos
+  const sortedGroups = {}
+  Object.keys(groups).sort().forEach(key => {
+    sortedGroups[key] = groups[key].sort((a, b) => a.lastName.localeCompare(b.lastName))
+  })
   
-  return list.sort((a, b) => a.lastName.localeCompare(b.lastName))
+  return sortedGroups
 })
 
 const openEnrollModal = (student) => {
@@ -196,6 +238,8 @@ const handleExcelUpload = (event) => {
     const rudeKey = findKey(firstRow, ['RUDE', 'CODIGO', 'ID'])
     const lastKeys = findKeys(firstRow, ['APELLIDO', 'LASTNAME', 'PATERNO', 'MATERNO'])
     const firstKeys = findKeys(firstRow, ['NOMBRE', 'FIRSTNAME', 'NOMBRES'])
+    const genderKey = findKey(firstRow, ['GENERO', 'SEXO', 'GENDER'])
+    const phoneKey = findKey(firstRow, ['CELULAR', 'TELEFONO', 'PHONE', 'CONTACTO'])
 
     if (firstKeys.length === 0 || lastKeys.length === 0) {
       alert(`No se pudieron detectar las columnas de nombres. 
@@ -238,10 +282,15 @@ Asegúrese de que el Excel tenga encabezados como "Apellidos" y "Nombres".`)
 
         if (rude && firstName && lastName) {
           try {
+            const gender = (genderKey ? (row[genderKey] || 'M') : 'M').toString().toUpperCase().charAt(0)
+            const phone = (phoneKey ? (row[phoneKey] || '') : '').toString().trim()
+
             const createRes = await api.post('/students', { 
               rude, 
               firstName, 
-              lastName
+              lastName,
+              gender: ['M', 'F'].includes(gender) ? gender : 'M',
+              phone
             })
             
             const student = createRes.data
@@ -282,8 +331,8 @@ Asegúrese de que el Excel tenga encabezados como "Apellidos" y "Nombres".`)
 
 const downloadTemplate = () => {
   const data = [
-    { RUDE: '(Opcional)', APELLIDOS: 'Perez Gomez', NOMBRES: 'Juan Alberto' },
-    { RUDE: '', APELLIDOS: 'Rojas Mamani', NOMBRES: 'Maria Elena' }
+    { RUDE: '(Opcional)', APELLIDOS: 'Perez Gomez', NOMBRES: 'Juan Alberto', GENERO: 'M', CELULAR: '70000000' },
+    { RUDE: '', APELLIDOS: 'Rojas Mamani', NOMBRES: 'Maria Elena', GENERO: 'F', CELULAR: '60000000' }
   ]
   const ws = XLSX.utils.json_to_sheet(data)
   const wb = XLSX.utils.book_new()
@@ -340,14 +389,30 @@ const reactivateStudent = async (id) => {
         />
       </div>
 
-      <div class="filter-group">
-        <label class="sr-only">Filtrar por Curso</label>
-        <select v-model="selectedCourseFilter" class="input-field course-filter">
-          <option value="">Todos los Cursos</option>
-          <option v-for="c in courses" :key="c.id" :value="c.id">
-            {{ c.level }} - {{ c.parallel }}
-          </option>
-        </select>
+      <div class="course-buttons-nav">
+        <button 
+          @click="selectedCourseFilter = ''" 
+          class="nav-btn" 
+          :class="{ active: selectedCourseFilter === '' }"
+        >
+          Todos
+        </button>
+        <button 
+          @click="selectedCourseFilter = 'UNENROLLED'" 
+          class="nav-btn orange" 
+          :class="{ active: selectedCourseFilter === 'UNENROLLED' }"
+        >
+          Pendientes / Reservas
+        </button>
+        <button 
+          v-for="c in courses" 
+          :key="c.id" 
+          @click="selectedCourseFilter = c.id.toString()" 
+          class="nav-btn"
+          :class="{ active: selectedCourseFilter === c.id.toString() }"
+        >
+          {{ c.level }} {{ c.parallel }}
+        </button>
       </div>
     </div>
 
@@ -357,63 +422,69 @@ const reactivateStudent = async (id) => {
         <p>Cargando lista de estudiantes...</p>
       </div>
 
-      <table v-else class="data-table">
-        <thead>
-          <tr>
-            <th>RUDE</th>
-            <th>Apellidos</th>
-            <th>Nombres</th>
-            <th>Género</th>
-            <th>Celular</th>
-            <th>Curso</th>
-            <th>Fecha Nac.</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="student in filteredStudents" :key="student.id">
-            <td class="font-bold">{{ student.rude }}</td>
-            <td>{{ student.lastName }}</td>
-            <td>{{ student.firstName }}</td>
-            <td class="text-center">
-              <span class="badge-mini" :class="student.gender === 'M' ? 'blue' : 'pink'">
-                {{ student.gender }}
-              </span>
-            </td>
-            <td>{{ student.phone || '-' }}</td>
-            <td>
-              <div v-if="!student.isActive" class="badge danger">INACTIVO</div>
-              <div v-else-if="student.enrollments?.length" class="badge success">
-                {{ student.enrollments[0].course.level }} - {{ student.enrollments[0].course.parallel }}
-              </div>
-              <span v-else class="badge gray">No inscrito</span>
-            </td>
-            <td>{{ student.birthDate ? new Date(student.birthDate).toLocaleDateString() : 'N/A' }}</td>
-            <td class="actions-cell">
-              <template v-if="student.isActive">
-                <button @click="openEnrollModal(student)" class="action-btn enroll" :title="student.enrollments?.length ? 'Cambiar de Curso' : 'Inscribir en Curso'">
-                  <RefreshCw v-if="student.enrollments?.length" :size="18" />
-                  <Link v-else :size="18" />
-                </button>
-                <button @click="openModal(student)" class="action-btn edit" title="Editar">
-                  <Edit3 :size="18" />
-                </button>
-                <button @click="confirmDelete(student.id)" class="action-btn delete" title="Dar de Baja">
-                  <Trash2 :size="18" />
-                </button>
-              </template>
-              <template v-else>
-                <button @click="reactivateStudent(student.id)" class="action-btn enroll" title="Reactivar">
-                  <Plus :size="18" />
-                </button>
-              </template>
-            </td>
-          </tr>
-          <tr v-if="studentStore.students.length === 0">
-            <td colspan="5" class="empty-state">No hay estudiantes registrados.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-else>
+        <div v-for="(students, courseName) in groupedStudents" :key="courseName" class="course-group-section">
+          <div class="course-header-banner">
+            <Layers :size="18" />
+            <span>{{ courseName }}</span>
+            <span class="count-badge">{{ students.length }} Alumnos</span>
+          </div>
+          
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 150px;">RUDE</th>
+                <th>Apellidos</th>
+                <th>Nombres</th>
+                <th style="width: 80px;" class="text-center">Género</th>
+                <th style="width: 120px;">Celular</th>
+                <th style="width: 150px;">Fecha Nac.</th>
+                <th style="width: 120px;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="student in students" :key="student.id">
+                <td class="font-bold">{{ student.rude }}</td>
+                <td>{{ student.lastName }}</td>
+                <td>{{ student.firstName }}</td>
+                <td class="text-center">
+                  <span class="badge-mini" :class="student.gender === 'M' ? 'blue' : 'pink'">
+                    {{ student.gender }}
+                  </span>
+                </td>
+                <td>{{ student.phone || '-' }}</td>
+                <td>{{ student.birthDate ? new Date(student.birthDate).toLocaleDateString() : 'N/A' }}</td>
+                <td class="actions-cell">
+                  <template v-if="student.isActive">
+                    <button @click="openEnrollModal(student)" class="action-btn enroll" :title="student.enrollments?.length ? 'Cambiar de Curso' : 'Inscribir en Curso'">
+                      <RefreshCw v-if="student.enrollments?.length" :size="18" />
+                      <Link v-else :size="18" />
+                    </button>
+                    <button @click="openModal(student)" class="action-btn edit" title="Editar">
+                      <Edit3 :size="18" />
+                    </button>
+                    <button @click="confirmDelete(student.id)" class="action-btn delete" title="Dar de Baja">
+                      <Trash2 :size="18" />
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button @click="reactivateStudent(student.id)" class="action-btn enroll" title="Reactivar">
+                      <Plus :size="18" />
+                    </button>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="Object.keys(groupedStudents).length === 0" class="empty-state-container">
+          <div class="empty-state glass-card">
+            <Search :size="48" />
+            <p>No se encontraron estudiantes con los filtros actuales.</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Modal Registro -->
@@ -447,6 +518,19 @@ const reactivateStudent = async (id) => {
               <label>Celular / Teléfono</label>
               <input v-model="newStudent.phone" type="text" class="input-field" placeholder="70000000" />
             </div>
+          </div>
+
+          <div class="form-section-divider" v-if="!isEditing"></div>
+          
+          <div class="form-group" v-if="!isEditing">
+            <label>Inscribir directamente en (Opcional)</label>
+            <select v-model="newStudent.courseId" class="input-field highlight">
+              <option value="">-- No inscribir aún --</option>
+              <option v-for="c in courses" :key="c.id" :value="c.id">
+                {{ c.level }} "{{ c.parallel }}"
+              </option>
+            </select>
+            <p class="input-hint">El estudiante será inscrito automáticamente en la gestión {{ years[0]?.year }}</p>
           </div>
           <div class="form-group">
             <label>Fecha de Nacimiento</label>
@@ -568,16 +652,86 @@ const reactivateStudent = async (id) => {
 }
 
 .actions-bar {
-  padding: 1rem;
+  padding: 1.25rem;
   display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  align-items: center;
+}
+
+.course-buttons-nav {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scrollbar-width: thin;
+}
+
+.course-buttons-nav::-webkit-scrollbar {
+  height: 4px;
+}
+
+.course-buttons-nav::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+}
+
+.nav-btn {
+  white-space: nowrap;
+  padding: 0.6rem 1.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nav-btn:hover {
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.nav-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.nav-btn.orange:hover {
+  color: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.nav-btn.orange.active {
+  background: #f59e0b;
+  color: white;
+  border-color: #f59e0b;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
 }
 
 .search-wrapper {
   position: relative;
   flex: 1;
   max-width: 400px;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 1rem;
+  color: var(--text-muted);
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.search-wrapper .input-field {
+  padding-left: 2.8rem;
+  width: 100%;
 }
 
 .course-filter {
@@ -722,7 +876,69 @@ const reactivateStudent = async (id) => {
 .badge-mini.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
 .badge-mini.pink { background: rgba(ec, 72, 153, 0.1); color: #ec4899; }
 
+.form-section-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 1.5rem 0;
+  opacity: 0.5;
+}
+
+.input-field.highlight {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.4rem;
+}
+
 .text-center { text-align: center; }
+
+.course-group-section {
+  margin-bottom: 2rem;
+}
+
+.course-header-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-left: 4px solid var(--primary);
+  border-radius: 0 0.75rem 0.75rem 0;
+  margin-bottom: 1rem;
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.count-badge {
+  margin-left: auto;
+  font-size: 0.8rem;
+  background: var(--primary);
+  color: white;
+  padding: 0.2rem 0.6rem;
+  border-radius: 2rem;
+}
+
+.empty-state-container {
+  padding: 4rem;
+  display: flex;
+  justify-content: center;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem;
+  color: var(--text-muted);
+  width: 100%;
+  max-width: 400px;
+}
 
 .action-btn.enroll:hover { color: var(--primary); background: rgba(99, 102, 241, 0.1); }
 </style>

@@ -45,11 +45,20 @@ export class StudentsService {
     }
 
     try {
+      const { courseId, academicYearId, ...studentData } = dto;
+      
       const student = await this.prisma.student.create({
         data: {
-          ...dto,
+          ...studentData,
           schoolId,
-          birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
+          birthDate: studentData.birthDate ? new Date(studentData.birthDate) : null,
+          enrollments: (courseId && academicYearId) ? {
+            create: {
+              courseId: Number(courseId),
+              academicYearId: Number(academicYearId),
+              schoolId
+            }
+          } : undefined
         },
         include: {
           enrollments: {

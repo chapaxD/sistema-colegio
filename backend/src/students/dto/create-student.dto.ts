@@ -16,4 +16,18 @@ export class CreateStudentDto {
   @IsDateString()
   @IsOptional()
   birthDate?: string;
+
+  @IsString()
+  @IsOptional()
+  gender?: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @IsOptional()
+  courseId?: number;
+
+  @IsOptional()
+  academicYearId?: number;
 }

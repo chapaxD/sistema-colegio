@@ -46,7 +46,7 @@ const deleteUser = async (id) => {
       await api.delete(`/users/${id}`)
       fetchData()
     } catch (err) {
-      alert('Error al eliminar usuario')
+      alert(err.response?.data?.message || 'Error al eliminar usuario')
     }
   }
 }

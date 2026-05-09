@@ -44,6 +44,19 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({ where: { id, schoolId } });
     if (!user) throw new BadRequestException('Usuario no encontrado');
 
+    // Verificar si es un docente con asignaciones
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { userId: id },
+      include: { assignments: true }
+    });
+
+    if (teacher && teacher.assignments.length > 0) {
+      throw new BadRequestException(
+        `No se puede eliminar al docente porque tiene ${teacher.assignments.length} materias asignadas. ` +
+        `Por favor, elimine primero sus asignaciones en el módulo de Configuración Académica.`
+      );
+    }
+
     // Primero eliminar el registro de docente si existe
     await this.prisma.teacher.deleteMany({ where: { userId: id } });
     return this.prisma.user.delete({ where: { id } });

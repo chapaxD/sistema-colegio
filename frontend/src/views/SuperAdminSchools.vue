@@ -213,9 +213,14 @@ onMounted(fetchSchools)
                   <div class="school-meta">
                     <span class="school-name">{{ school.name }}</span>
                     <span class="school-address">{{ school.address || 'Sin dirección' }}</span>
-                    <span class="school-admin-email" title="Email del Administrador">
-                      <Users :size="12" /> {{ school.users?.[0]?.email || 'Sin admin' }}
-                    </span>
+                    <div class="school-contacts">
+                      <span class="contact-item" title="Teléfono del Colegio">
+                        <Phone :size="12" /> {{ school.phone || 'S/N' }}
+                      </span>
+                      <span class="contact-item" title="Email del Administrador">
+                        <Users :size="12" /> {{ school.users?.[0]?.email || 'Sin admin' }}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </td>
@@ -443,17 +448,23 @@ td {
   gap: 1rem;
 }
 
-.school-admin-email {
+.school-contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.contact-item {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.4rem;
   font-size: 0.75rem;
   color: var(--primary);
-  margin-top: 0.25rem;
   opacity: 0.8;
 }
 
-.school-admin-email svg {
+.contact-item svg {
   opacity: 0.6;
 }
 

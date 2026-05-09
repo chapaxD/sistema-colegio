@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
-import { Search, Printer, FileText, Loader2, Download, FileDown } from 'lucide-vue-next'
+import { Search, Printer, FileText, Loader2, Download, FileDown, Trash2 } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
 
@@ -28,6 +28,8 @@ const manualData = ref({
   dificultades: '',
   sugerencias: '',
   learningIssuesIds: [],
+  selectedSubjectsIds: [],
+  difficultiesList: [], // { studentId, fullName, subjects: '', notes: '' }
   subjectAvance: {}
 })
 
@@ -230,17 +232,136 @@ const fetchPedagogicalData = async () => {
     
     // Inicializar tabla de avance si hay materias
     if (res.data.subjects) {
+      manualData.value.selectedSubjectsIds = res.data.subjects.map(s => s.id)
       res.data.subjects.forEach(s => {
         if (!manualData.value.subjectAvance[s.id]) {
           manualData.value.subjectAvance[s.id] = { prog: '100', avan: '', pend: '' }
         }
       })
     }
+    // Inicializar lista de dificultades descriptivas
+    if (res.data.strugglingStudents) {
+      manualData.value.difficultiesList = res.data.strugglingStudents.map(s => ({
+        studentId: s.id,
+        fullName: s.fullName,
+        subjects: '',
+        notes: ''
+      }))
+    } else {
+      manualData.value.difficultiesList = []
+    }
   } catch (err) {
     error.value = 'Error al cargar datos del curso'
   } finally {
     loading.value = false
   }
+}
+
+const addDifficultyRow = () => {
+  manualData.value.difficultiesList.push({
+    studentId: Date.now(),
+    fullName: '',
+    subjects: '',
+    notes: ''
+  })
+}
+
+const removeDifficultyRow = (index) => {
+  manualData.value.difficultiesList.splice(index, 1)
+}
+
+const printDifficultiesReport = () => {
+  const course = courses.value.find(c => c.id === parseInt(selectedCourse.value))
+  const courseName = course ? `${course.level} ${course.parallel}` : ''
+  
+  const rows = manualData.value.difficultiesList.map((item, idx) => `
+    <tr>
+      <td style="border:1px solid #000;padding:8px;text-align:center;">${idx + 1}</td>
+      <td style="border:1px solid #000;padding:8px;text-align:left;font-weight:bold;">${item.fullName.toUpperCase()}</td>
+      <td style="border:1px solid #000;padding:8px;text-align:center;">${item.subjects.toUpperCase()}</td>
+      <td style="border:1px solid #000;padding:8px;text-align:left;font-size:9pt;">${item.notes}</td>
+    </tr>
+  `).join('')
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { size: letter; margin: 20mm; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.4; color: #000; }
+    .header-img { width: 100%; margin-bottom: 20px; }
+    .main-title { text-align: center; font-size: 16pt; font-weight: bold; text-decoration: underline; margin-bottom: 30px; text-transform: uppercase; }
+    
+    .memo-info { margin-bottom: 25px; }
+    .memo-row { display: flex; margin-bottom: 5px; }
+    .memo-label { width: 80px; font-weight: bold; }
+    .memo-value { flex: 1; border-bottom: 1px solid #000; padding-left: 10px; }
+    
+    .intro-text { text-align: justify; margin-bottom: 20px; }
+    .intro-text p { margin-bottom: 15px; }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th { border: 1px solid #000; padding: 10px; background: #f2f2f2; font-size: 10pt; }
+    td { border: 1px solid #000; padding: 10px; vertical-align: top; }
+    
+    .footer-signs { margin-top: 60px; display: flex; justify-content: space-around; }
+    .sign-box { text-align: center; width: 40%; }
+    .sign-line { border-top: 1px solid #000; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <div class="main-title">INFORME DE ESTUDIANTES CON DIFICULTADES DE APRENDIZAJES</div>
+
+  <div class="memo-info">
+    <div class="memo-row"><span class="memo-label">A:</span> <div class="memo-value">Lic. ${settings.value.directorName} / DIRECTORA DE LA U.E. ${settings.value.schoolName}</div></div>
+    <div class="memo-row"><span class="memo-label">DE:</span> <div class="memo-value">Prof. ${settings.value.teacherName}</div></div>
+    <div class="memo-row"><span class="memo-label">REF.:</span> <div class="memo-value">INFORME DE ESTUDIANTES CON DIFICULTADES DE APRENDIZAJE ${selectedTrimester.value}º TRIMESTRE</div></div>
+    <div class="memo-row"><span class="memo-label">FECHA:</span> <div class="memo-value">${new Date().toLocaleDateString()}</div></div>
+  </div>
+
+  <div class="intro-text">
+    <p>Tengo a bien informar sobre el desarrollo pedagógico del ${selectedTrimester.value}º trimestre:</p>
+    <p>Elevo el presente informe sobre los estudiantes con dificultades en el ${selectedTrimester.value}º Trimestre, de acuerdo a las instructivas emanadas de su autoridad.</p>
+    <p>Los estudiantes que figuran en lista adjunta presentan problemas de aprendizaje, pese que durante el trimestre se fue reforzando con diferentes estrategias y adaptaciones curriculares que coadyuven el aprendizaje del estudiante, también es de conocimiento de los padres / madres de familia ya que se les informó de forma oportuna y constante; sin embargo presentan dificultades y no corresponde para la aprobación trimestral ya que no cumplen con los perfiles de salida en la asignatura correspondiente.</p>
+    <p>Adjunto una nómina de estudiantes para fines consiguientes:</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 40px;">Nº</th>
+        <th>NOMBRE COMPLETO</th>
+        <th style="width: 120px;">ASIGNATURA</th>
+        <th>DIFICULTADES</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+
+  <div class="footer-signs">
+    <div class="sign-box">
+      <div class="sign-line"></div>
+      <p><strong>${settings.value.teacherName}</strong></p>
+      <p>PROFESOR(A)</p>
+    </div>
+    <div class="sign-box">
+      <div class="sign-line"></div>
+      <p><strong>${settings.value.directorName}</strong></p>
+      <p>DIRECTOR(A)</p>
+    </div>
+  </div>
+
+  <script>window.onload = () => window.print()<\/script>
+</body>
+</html>`
+
+  const win = window.open('', '_blank', 'width=900,height=800')
+  win.document.write(html)
+  win.document.close()
 }
 
 const printPedagogical = () => {
@@ -260,15 +381,26 @@ const printPedagogical = () => {
   const emptyAttendance = Array(Math.max(0, 8 - pedagogicalData.value.attendanceIssues.length)).fill('<tr><td style="border:1px solid #000;height:25px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')
 
   // Página 2: Problemas de Aprendizaje
-  const learningIssuesRows = pedagogicalData.value.attendanceIssues
-    .filter(s => manualData.value.learningIssuesIds.includes(s.id))
-    .map((item, idx) => `
-      <tr>
-        <td style="border:1px solid #000;padding:5px;">${idx + 1}</td>
-        <td style="border:1px solid #000;padding:5px;text-align:left;">${item.fullName}</td>
-        <td style="border:1px solid #000;padding:5px;">${item.phone}</td>
-      </tr>
-    `).join('')
+  // Buscamos en todas las fuentes de datos posibles para no perder ningún alumno seleccionado
+  const allPossibleStudents = [
+    ...(pedagogicalData.value.strugglingStudents || []),
+    ...(pedagogicalData.value.attendanceIssues || []),
+    ...(pedagogicalData.value.reprobados || []),
+    ...(pedagogicalData.value.allStudents || [])
+  ]
+
+  const learningIssuesRows = (manualData.value.learningIssuesIds || [])
+    .map((id, idx) => {
+      const student = allPossibleStudents.find(s => Number(s.id) === Number(id))
+      if (!student) return ''
+      return `
+        <tr>
+          <td style="border:1px solid #000;padding:5px;">${idx + 1}</td>
+          <td style="border:1px solid #000;padding:5px;text-align:left;">${student.fullName}</td>
+          <td style="border:1px solid #000;padding:5px;">${student.phone || 'S/N'}</td>
+        </tr>
+      `
+    }).join('')
   const emptyLearning = Array(Math.max(0, 8 - manualData.value.learningIssuesIds.length)).fill('<tr><td style="border:1px solid #000;height:25px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')
 
   // Página 2: Reprobados
@@ -282,16 +414,18 @@ const printPedagogical = () => {
   const emptyReprobados = Array(Math.max(0, 8 - pedagogicalData.value.reprobados.length)).fill('<tr><td style="border:1px solid #000;height:25px;"></td><td style="border:1px solid #000;"></td><td style="border:1px solid #000;"></td></tr>').join('')
 
   // Página 2: Avance Programático
-  const subjectRows = pedagogicalData.value.subjects.map(s => {
-    const data = manualData.value.subjectAvance[s.id] || { prog: '', avan: '', pend: '' }
-    const total = data.avan || '0'
+  const subjectRows = pedagogicalData.value.subjects
+    .filter(s => manualData.value.selectedSubjectsIds.includes(s.id))
+    .map(s => {
+      const data = manualData.value.subjectAvance[s.id] || { prog: '', avan: '', pend: '' }
+      const total = data.avan || '0'
     return `
       <tr>
         <td style="border:1px solid #000;padding:5px;text-align:left;font-size:8pt;">${s.name.toUpperCase()}</td>
-        <td style="border:1px solid #000;padding:5px;">${data.prog}</td>
-        <td style="border:1px solid #000;padding:5px;">${data.avan}</td>
-        <td style="border:1px solid #000;padding:5px;">${data.pend}</td>
-        <td style="border:1px solid #000;padding:5px;font-weight:bold;">${total}%</td>
+        <td style="border:1px solid #000;padding:5px;">${data.prog}%</td>
+        <td style="border:1px solid #000;padding:5px;">${data.avan}%</td>
+        <td style="border:1px solid #000;padding:5px;">${data.pend}%</td>
+        <td style="border:1px solid #000;padding:5px;font-weight:bold;">${data.avan}%</td>
       </tr>
     `
   }).join('')
@@ -394,11 +528,11 @@ const printPedagogical = () => {
   <table class="full-table" style="font-size: 8pt;">
     <thead>
       <tr>
-        <th>AREAS ASIGNATURAS</th>
-        <th style="width: 80px;">TEMAS PROGR. %</th>
-        <th style="width: 80px;">TEMAS AVANZ. %</th>
-        <th style="width: 80px;">TEMAS PEND. %</th>
-        <th style="width: 80px;">TOTAL PORC. %</th>
+        <th>ÁREAS / ASIGNATURAS</th>
+        <th style="width: 100px;">TEMAS PROGRAMADOS %</th>
+        <th style="width: 100px;">TEMAS AVANZADOS %</th>
+        <th style="width: 100px;">TEMAS PENDIENTES %</th>
+        <th style="width: 100px;">ESTADO FINAL %</th>
       </tr>
     </thead>
     <tbody>${subjectRows}</tbody>
@@ -424,6 +558,7 @@ const printPedagogical = () => {
     <div class="tabs-header no-print">
       <button @click="activeTab = 'bulletin'" :class="{ active: activeTab === 'bulletin' }">Boletines Individuales</button>
       <button @click="activeTab = 'pedagogical'" :class="{ active: activeTab === 'pedagogical' }">Informe Pedagógico por Curso</button>
+      <button @click="activeTab = 'difficulties'" :class="{ active: activeTab === 'difficulties' }">Dificultades de Aprendizaje</button>
     </div>
 
     <div v-if="activeTab === 'bulletin'" class="search-section glass-card no-print">
@@ -518,33 +653,52 @@ const printPedagogical = () => {
         </div>
 
         <div class="learning-issues-selector glass-card p-4">
-          <h3 class="text-sm font-bold mb-2">Alumnos con problemas de aprendizaje (Leve)</h3>
+          <h3 class="text-sm font-bold mb-2">Alumnos con Aprovechamiento Leve (Notas 51-60)</h3>
+          <p class="text-[10px] text-orange-400 mb-2">* Solo se muestran alumnos con materias en riesgo.</p>
           <div class="issues-list grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-            <div v-for="s in pedagogicalData.attendanceIssues" :key="s.id" class="issue-item flex items-center gap-2">
+            <div v-for="s in pedagogicalData.strugglingStudents" :key="s.id" class="issue-item flex items-center gap-2">
               <input type="checkbox" :id="'learn-'+s.id" :value="s.id" v-model="manualData.learningIssuesIds" />
               <label :for="'learn-'+s.id" class="text-xs truncate cursor-pointer">{{ s.fullName }}</label>
             </div>
           </div>
+          <div v-if="!pedagogicalData.strugglingStudents?.length" class="text-xs text-muted py-2 text-center">
+            No se detectaron alumnos con notas bajas (51-60).
+          </div>
         </div>
 
-        <div class="avance-subjects mt-4">
-          <h3 class="text-sm font-bold mb-2">Avance Programático por Materia</h3>
+        <div class="avance-subjects mt-6">
+          <h3 class="text-sm font-bold mb-1">Avance Programático por Materia</h3>
+          <div class="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-4">
+            <p class="text-[11px] text-blue-200">
+              <strong>Guía de llenado:</strong> Indique el porcentaje de temas avanzados respecto al total planificado. 
+              Ejemplo: <strong>100%</strong> Programado, <strong>85%</strong> Avanzado, el sistema calculará el <strong>15%</strong> Pendiente automáticamente.
+            </p>
+          </div>
           <div class="avance-table-wrapper overflow-x-auto">
             <table class="mini-table">
               <thead>
                 <tr>
-                  <th>Materia</th>
-                  <th>Prog %</th>
-                  <th>Avan %</th>
-                  <th>Pend %</th>
+                  <th style="width: 40px;"></th>
+                  <th>Área / Asignatura</th>
+                  <th style="width: 100px;">Programado %</th>
+                  <th style="width: 100px;">Avanzado %</th>
+                  <th style="width: 100px;">Pendiente %</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="s in pedagogicalData.subjects" :key="s.id">
-                  <td class="text-xs truncate max-w-[150px]">{{ s.name }}</td>
-                  <td><input v-model="manualData.subjectAvance[s.id].prog" class="mini-input" /></td>
-                  <td><input v-model="manualData.subjectAvance[s.id].avan" class="mini-input" /></td>
-                  <td><input v-model="manualData.subjectAvance[s.id].pend" class="mini-input" /></td>
+                <tr v-for="s in pedagogicalData.subjects" :key="s.id" :class="{ 'opacity-40': !manualData.selectedSubjectsIds.includes(s.id) }">
+                  <td><input type="checkbox" :value="s.id" v-model="manualData.selectedSubjectsIds" /></td>
+                  <td class="text-xs font-semibold">{{ s.name }}</td>
+                  <td><input v-model="manualData.subjectAvance[s.id].prog" class="mini-input" :disabled="!manualData.selectedSubjectsIds.includes(s.id)" /></td>
+                  <td>
+                    <input 
+                      v-model="manualData.subjectAvance[s.id].avan" 
+                      @input="manualData.subjectAvance[s.id].pend = 100 - parseInt(manualData.subjectAvance[s.id].avan || 0)"
+                      class="mini-input highlight" 
+                      :disabled="!manualData.selectedSubjectsIds.includes(s.id)" 
+                    />
+                  </td>
+                  <td><input v-model="manualData.subjectAvance[s.id].pend" class="mini-input disabled" disabled /></td>
                 </tr>
               </tbody>
             </table>
@@ -558,10 +712,75 @@ const printPedagogical = () => {
           </button>
         </div>
       </div>
+    </div>
+
+    <div v-if="activeTab === 'difficulties'" class="difficulties-section glass-card no-print">
+      <div class="config-grid mb-6">
+        <div class="form-group">
+          <label>Curso</label>
+          <select v-model="selectedCourse" @change="fetchPedagogicalData" class="input-field">
+            <option value="">Seleccione un curso</option>
+            <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.level }} - {{ c.parallel }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Trimestre</label>
+          <select v-model="selectedTrimester" class="input-field">
+            <option :value="1">1º Trimestre</option>
+            <option :value="2">2º Trimestre</option>
+            <option :value="3">3º Trimestre</option>
+          </select>
+        </div>
+      </div>
+
+      <div v-if="pedagogicalData" class="difficulties-editor">
+        <h3 class="text-lg font-bold mb-4">Nómina de Estudiantes con Dificultades</h3>
+        
+        <div class="difficulties-table-wrapper">
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th style="width: 250px;">Estudiante</th>
+                <th style="width: 150px;">Asignatura</th>
+                <th>Descripción de Dificultades</th>
+                <th style="width: 50px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, idx) in manualData.difficultiesList" :key="idx">
+                <td>
+                  <input v-model="item.fullName" class="mini-input" placeholder="Nombre completo" />
+                </td>
+                <td>
+                  <input v-model="item.subjects" class="mini-input" placeholder="MAT - FIS" />
+                </td>
+                <td>
+                  <textarea v-model="item.notes" class="mini-input" rows="2" placeholder="Describa la dificultad..."></textarea>
+                </td>
+                <td>
+                  <button @click="removeDifficultyRow(idx)" class="btn-delete" title="Eliminar fila">
+                    <Trash2 :size="14" />
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex gap-4 mt-6">
+          <button @click="addDifficultyRow" class="btn btn-secondary">
+            + Añadir Alumno
+          </button>
+          <button @click="printDifficultiesReport" class="btn btn-primary flex-1">
+            <Printer :size="20" />
+            Generar Informe de Dificultades
+          </button>
+        </div>
+      </div>
 
       <div v-if="loading" class="searching-overlay">
         <Loader2 class="animate-spin" :size="32" />
-        <p>Cargando datos del curso...</p>
+        <p>Cargando datos...</p>
       </div>
     </div>
 
@@ -745,6 +964,36 @@ textarea.input-field {
 .mini-input:focus {
   background: rgba(255, 255, 255, 0.05);
   outline: none;
+}
+
+.mini-input.highlight {
+  border: 1px solid var(--primary);
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: 4px;
+}
+
+.mini-input.disabled {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.btn-delete {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-delete:hover {
+  background: #ef4444;
+  color: white;
 }
 
 .search-section {

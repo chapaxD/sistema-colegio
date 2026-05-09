@@ -250,9 +250,14 @@ export class AcademicService {
   }
 
   async updateTeacherByUserId(userId: number, dto: any) {
-    return this.prisma.teacher.update({
+    return this.prisma.teacher.upsert({
       where: { userId },
-      data: {
+      update: {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+      },
+      create: {
+        userId,
         firstName: dto.firstName,
         lastName: dto.lastName,
       }

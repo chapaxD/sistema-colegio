@@ -57,11 +57,11 @@ const fetchData = async () => {
     events.value = e.data
     teachers.value = t.data
     assignments.value = asg.data
-    
+
     if (years.value.length > 0) {
       newAssignment.value.academicYearId = years.value[0].id
     }
-    
+
     // Cargar datos de la escuela
     const schoolRes = await api.get('/schools/my')
     if (schoolRes.data) {
@@ -108,13 +108,13 @@ const addAssignment = async () => {
     }
 
     console.log('Sending assignment payload:', payload)
-    
+
     if (assignToAll.value) {
       await api.post('/academic/assignments/batch', payload)
     } else {
       await api.post('/academic/assignments', payload)
     }
-    
+
     fetchData()
     assignToAll.value = false
   } catch (err) {
@@ -161,10 +161,10 @@ const deleteEvent = async (id) => {
   }
 }
 
-const deleteCourse = async (id) => {
-  if (confirm('¿Eliminar este curso? Podría fallar si hay inscripciones vinculadas.')) {
+const deleteCourse = async (course) => {
+  if (confirm(`¿Está totalmente seguro de eliminar el curso "${course.level} ${course.parallel}"? Se perderán las inscripciones y registros vinculados.`)) {
     try {
-      await api.delete(`/academic/courses/${id}`)
+      await api.delete(`/academic/courses/${course.id}`)
       fetchData()
     } catch (err) {
       alert('No se pudo eliminar el curso. Verifique que no tenga alumnos inscritos.')
@@ -172,10 +172,10 @@ const deleteCourse = async (id) => {
   }
 }
 
-const deleteSubject = async (id) => {
-  if (confirm('¿Eliminar esta materia?')) {
+const deleteSubject = async (subject) => {
+  if (confirm(`¿Está seguro de eliminar la materia "${subject.name}"?`)) {
     try {
-      await api.delete(`/academic/subjects/${id}`)
+      await api.delete(`/academic/subjects/${subject.id}`)
       fetchData()
     } catch (err) {
       alert('No se pudo eliminar la materia. Verifique que no tenga notas registradas.')
@@ -304,13 +304,16 @@ const changePassword = async () => {
       <button @click="activeTab = 'subjects'" :class="{ active: activeTab === 'subjects' }">
         <Book :size="18" /> Materias
       </button>
-      <button @click="activeTab = 'assignments'" :class="{ active: activeTab === 'assignments' }" v-if="authStore.user?.role === 'ADMIN'">
+      <button @click="activeTab = 'assignments'" :class="{ active: activeTab === 'assignments' }"
+        v-if="authStore.user?.role === 'ADMIN'">
         <Users :size="18" /> Asignaciones
       </button>
-      <button @click="activeTab = 'years'" :class="{ active: activeTab === 'years' }" v-if="authStore.user?.role === 'ADMIN'">
+      <button @click="activeTab = 'years'" :class="{ active: activeTab === 'years' }"
+        v-if="authStore.user?.role === 'ADMIN'">
         <Calendar :size="18" /> Gestiones
       </button>
-      <button @click="activeTab = 'promotion'" :class="{ active: activeTab === 'promotion' }" v-if="authStore.user?.role === 'ADMIN'">
+      <button @click="activeTab = 'promotion'" :class="{ active: activeTab === 'promotion' }"
+        v-if="authStore.user?.role === 'ADMIN'">
         <ArrowUpRight :size="18" /> Promoción
       </button>
 
@@ -332,30 +335,29 @@ const changePassword = async () => {
           <form @submit.prevent="addCourse" class="academic-form">
             <div class="form-group">
               <label>Grado / Nivel</label>
-              <input v-model="newCourse.level" type="text" placeholder="Ej: 1ro de Primaria" class="input-field" required />
+              <input v-model="newCourse.level" type="text" placeholder="Ej: 1ro de Primaria" class="input-field"
+                required />
             </div>
             <div class="form-group">
               <label>Paralelo</label>
               <input v-model="newCourse.parallel" type="text" placeholder="Ej: A" class="input-field" required />
             </div>
-            <button type="submit" class="btn btn-primary"><Plus :size="18" /> Agregar Curso</button>
+            <button type="submit" class="btn btn-primary">
+              <Plus :size="18" /> Agregar Curso
+            </button>
           </form>
         </div>
         <div class="list-section glass-card">
           <h3>Cursos Registrados</h3>
           <div class="items-list">
             <div v-for="c in courses" :key="c.id" class="item-card">
-              <div v-if="editingItem?.type === 'course' && editingItem.id === c.id" class="edit-mode">
-                <input v-model="editingItem.data.level" class="input-field sm" />
-                <input v-model="editingItem.data.parallel" class="input-field sm" />
-                <button @click="saveEdit" class="btn btn-primary sm"><Save :size="14" /></button>
-                <button @click="editingItem = null" class="btn btn-icon"><Plus :size="14" style="transform: rotate(45deg)" /></button>
-              </div>
-              <div v-else class="item-info" @click="authStore.user?.role === 'ADMIN' ? startEdit('course', c) : null">
+              <div class="item-info" @click="authStore.user?.role === 'ADMIN' ? startEdit('course', c) : null">
                 <strong>{{ c.level }}</strong>
                 <span>Paralelo: {{ c.parallel }}</span>
               </div>
-              <button v-if="authStore.user?.role === 'ADMIN'" @click="deleteCourse(c.id)" class="btn-icon delete"><Trash2 :size="16" /></button>
+              <button v-if="authStore.user?.role === 'ADMIN'" @click="deleteCourse(c)" class="btn-icon delete">
+                <Trash2 :size="16" />
+              </button>
             </div>
           </div>
         </div>
@@ -370,37 +372,32 @@ const changePassword = async () => {
               <label>Nombre de la Materia</label>
               <input v-model="newSubject.name" type="text" placeholder="Ej: Matemáticas" class="input-field" required />
             </div>
-            <button type="submit" class="btn btn-primary"><Plus :size="18" /> Agregar Materia</button>
+            <button type="submit" class="btn btn-primary">
+              <Plus :size="18" /> Agregar Materia
+            </button>
           </form>
         </div>
         <div class="list-section glass-card">
           <div class="list-header">
             <h3>Materias Registradas</h3>
-            <button v-if="authStore.user?.role === 'ADMIN'" @click="saveSubjectOrder" class="btn btn-primary sm" :disabled="savingOrder">
+            <button v-if="authStore.user?.role === 'ADMIN'" @click="saveSubjectOrder" class="btn btn-primary sm"
+              :disabled="savingOrder">
               <Save :size="16" /> {{ savingOrder ? 'Guardando...' : 'Guardar Orden' }}
             </button>
           </div>
           <p class="drag-hint" v-if="authStore.user?.role === 'ADMIN'">Arrastra las materias para cambiar su orden</p>
           <div class="items-list">
-            <div 
-              v-for="(s, index) in subjects" 
-              :key="s.id" 
-              class="item-card draggable"
-              draggable="true"
-              @dragstart="onDragStart(index)"
-              @dragover.prevent
-              @drop="onDrop(index)"
-              :class="{ 'drag-over': dragIndex === index }"
-            >
-              <div class="drag-handle" v-if="authStore.user?.role === 'ADMIN'"><GripVertical :size="18" /></div>
-              <span class="order-num">{{ index + 1 }}.</span>
-              <div v-if="editingItem?.type === 'subject' && editingItem.id === s.id" class="edit-mode">
-                <input v-model="editingItem.data.name" class="input-field sm" />
-                <button @click="saveEdit" class="btn btn-primary sm"><Save :size="14" /></button>
-                <button @click="editingItem = null" class="btn btn-icon"><Plus :size="14" style="transform: rotate(45deg)" /></button>
+            <div v-for="(s, index) in subjects" :key="s.id" class="item-card draggable" draggable="true"
+              @dragstart="onDragStart(index)" @dragover.prevent @drop="onDrop(index)"
+              :class="{ 'drag-over': dragIndex === index }">
+              <div class="drag-handle" v-if="authStore.user?.role === 'ADMIN'">
+                <GripVertical :size="18" />
               </div>
-              <span v-else class="subject-name" @click="authStore.user?.role === 'ADMIN' ? startEdit('subject', s) : null">{{ s.name }}</span>
-              <button v-if="authStore.user?.role === 'ADMIN'" @click="deleteSubject(s.id)" class="btn-icon delete"><Trash2 :size="16" /></button>
+              <span class="subject-name" @click="authStore.user?.role === 'ADMIN' ? startEdit('subject', s) : null">{{
+                s.name }}</span>
+              <button v-if="authStore.user?.role === 'ADMIN'" @click="deleteSubject(s)" class="btn-icon delete">
+                <Trash2 :size="16" />
+              </button>
             </div>
           </div>
         </div>
@@ -445,7 +442,9 @@ const changePassword = async () => {
                 <option v-for="y in years" :key="y.id" :value="y.id">{{ y.year }}</option>
               </select>
             </div>
-            <button type="submit" class="btn btn-primary"><Plus :size="18" /> Crear Asignación</button>
+            <button type="submit" class="btn btn-primary">
+              <Plus :size="18" /> Crear Asignación
+            </button>
           </form>
         </div>
         <div class="list-section glass-card">
@@ -459,7 +458,9 @@ const changePassword = async () => {
                   <span class="badge subject">{{ asg.subject.name }}</span>
                 </div>
               </div>
-              <button @click="deleteAssignment(asg.id)" class="btn-icon delete"><Trash2 :size="16" /></button>
+              <button @click="deleteAssignment(asg.id)" class="btn-icon delete">
+                <Trash2 :size="16" />
+              </button>
             </div>
           </div>
         </div>
@@ -474,7 +475,9 @@ const changePassword = async () => {
               <label>Año</label>
               <input v-model.number="newYear.year" type="number" class="input-field" required />
             </div>
-            <button type="submit" class="btn btn-primary"><Plus :size="18" /> Iniciar Gestión</button>
+            <button type="submit" class="btn btn-primary">
+              <Plus :size="18" /> Iniciar Gestión
+            </button>
           </form>
         </div>
         <div class="list-section glass-card">
@@ -492,11 +495,14 @@ const changePassword = async () => {
       <div v-if="activeTab === 'promotion'" class="grid-layout">
         <div class="form-section glass-card full-width">
           <h3>Promoción Masiva de Estudiantes</h3>
-          <p class="section-desc">Esta herramienta permite inscribir a todos los estudiantes de un curso directamente al curso siguiente para la nueva gestión.</p>
-          
+          <p class="section-desc">Esta herramienta permite inscribir a todos los estudiantes de un curso directamente al
+            curso siguiente para la nueva gestión.</p>
+
           <div class="promotion-grid">
             <div class="promotion-column">
-              <h4><div class="step-badge">1</div> Origen (Actual)</h4>
+              <h4>
+                <div class="step-badge">1</div> Origen (Actual)
+              </h4>
               <div class="form-group">
                 <label>Gestión de Origen</label>
                 <select v-model="promotionData.sourceYearId" class="input-field">
@@ -518,7 +524,9 @@ const changePassword = async () => {
             </div>
 
             <div class="promotion-column">
-              <h4><div class="step-badge">2</div> Destino (Próximo)</h4>
+              <h4>
+                <div class="step-badge">2</div> Destino (Próximo)
+              </h4>
               <div class="form-group">
                 <label>Gestión de Destino</label>
                 <select v-model="promotionData.targetYearId" class="input-field">
@@ -538,7 +546,8 @@ const changePassword = async () => {
 
           <div class="promotion-actions">
             <div class="warning-box">
-              <strong>Atención:</strong> Se crearán nuevas inscripciones para todos los estudiantes del curso de origen en el curso de destino. No se duplicarán si ya existen.
+              <strong>Atención:</strong> Se crearán nuevas inscripciones para todos los estudiantes del curso de origen
+              en el curso de destino. No se duplicarán si ya existen.
             </div>
             <button @click="executePromotion" class="btn btn-primary lg" :disabled="promoting">
               <Loader2 v-if="promoting" class="animate-spin" :size="20" />
@@ -549,11 +558,15 @@ const changePassword = async () => {
         </div>
       </div>
 
-      <!-- Perfil Docente -->
+      <!-- Perfil Usuario -->
       <div v-if="activeTab === 'profile'" class="grid-layout">
         <div class="form-section glass-card">
-          <h3>Mis Datos Profesionales</h3>
-          <p class="section-desc">Actualice su información personal que aparecerá en los boletines.</p>
+          <h3>{{ authStore.user?.role === 'ADMIN' ? 'Perfil del Administrador' : 'Mis Datos Profesionales' }}</h3>
+          <p class="section-desc">
+            {{ authStore.user?.role === 'ADMIN' 
+               ? 'Gestione su información de identidad y firma institucional.' 
+               : 'Actualice su información personal que aparecerá en los boletines.' }}
+          </p>
           <form @submit.prevent="updateProfile" class="academic-form">
             <div class="form-group">
               <label>Nombres</label>
@@ -563,7 +576,9 @@ const changePassword = async () => {
               <label>Apellidos</label>
               <input v-model="teacherProfile.lastName" type="text" class="input-field" required />
             </div>
-            <button type="submit" class="btn btn-primary"><Save :size="18" /> Guardar Perfil</button>
+            <button type="submit" class="btn btn-primary">
+              <Save :size="18" /> Guardar Perfil
+            </button>
           </form>
         </div>
         <div class="list-section glass-card">
@@ -572,20 +587,23 @@ const changePassword = async () => {
           <form @submit.prevent="changePassword" class="academic-form">
             <div class="form-group">
               <label>Nueva Contraseña</label>
-              <input v-model="passwordData.newPassword" type="password" class="input-field" placeholder="••••••••" required />
+              <input v-model="passwordData.newPassword" type="password" class="input-field" placeholder="••••••••"
+                required />
             </div>
             <div class="form-group">
               <label>Confirmar Contraseña</label>
-              <input v-model="passwordData.confirmPassword" type="password" class="input-field" placeholder="••••••••" required />
+              <input v-model="passwordData.confirmPassword" type="password" class="input-field" placeholder="••••••••"
+                required />
             </div>
             <button type="submit" class="btn btn-outline w-full" :disabled="changingPassword">
               <Loader2 v-if="changingPassword" class="animate-spin" :size="18" />
               <span v-else>Actualizar Contraseña</span>
             </button>
           </form>
-          
+
           <div class="preview-box mt-6">
-            <p><strong>Docente:</strong> {{ teacherProfile.lastName }} {{ teacherProfile.firstName }}</p>
+            <p><strong>{{ authStore.user?.role === 'ADMIN' ? 'Administrador:' : 'Docente:' }}</strong> {{ teacherProfile.lastName }} {{ teacherProfile.firstName }}</p>
+            <p><strong>Usuario:</strong> {{ authStore.user?.email }}</p>
             <p><strong>Estado:</strong> Activo</p>
           </div>
         </div>
@@ -598,7 +616,8 @@ const changePassword = async () => {
           <form @submit.prevent="addEvent" class="academic-form">
             <div class="form-group">
               <label>Título del Evento</label>
-              <input v-model="newEvent.title" type="text" placeholder="Ej: Reunión de Padres" class="input-field" required />
+              <input v-model="newEvent.title" type="text" placeholder="Ej: Reunión de Padres" class="input-field"
+                required />
             </div>
             <div class="form-group">
               <label>Fecha</label>
@@ -606,9 +625,12 @@ const changePassword = async () => {
             </div>
             <div class="form-group">
               <label>Descripción (Opcional)</label>
-              <textarea v-model="newEvent.description" class="input-field" placeholder="Detalles del evento..."></textarea>
+              <textarea v-model="newEvent.description" class="input-field"
+                placeholder="Detalles del evento..."></textarea>
             </div>
-            <button type="submit" class="btn btn-primary"><Plus :size="18" /> Programar Evento</button>
+            <button type="submit" class="btn btn-primary">
+              <Plus :size="18" /> Programar Evento
+            </button>
           </form>
         </div>
         <div class="list-section glass-card">
@@ -622,13 +644,54 @@ const changePassword = async () => {
                 <strong>{{ e.title }}</strong>
                 <p>{{ e.description }}</p>
               </div>
-              <button @click="deleteEvent(e.id)" class="btn-icon delete"><Trash2 :size="16" /></button>
+              <button @click="deleteEvent(e.id)" class="btn-icon delete">
+                <Trash2 :size="16" />
+              </button>
             </div>
           </div>
         </div>
       </div>
 
 
+    </div>
+
+    <!-- Modal de Edición (Cursos / Materias) -->
+    <div v-if="editingItem" class="modal-overlay" @click.self="editingItem = null">
+      <div class="modal-content glass-card">
+        <div class="modal-header">
+          <h2>Editar {{ editingItem.type === 'course' ? 'Curso' : 'Materia' }}</h2>
+          <button @click="editingItem = null" class="btn-close">
+            <Plus :size="24" style="transform: rotate(45deg)" />
+          </button>
+        </div>
+
+        <form @submit.prevent="saveEdit" class="academic-form mt-4">
+          <div v-if="editingItem.type === 'course'">
+            <div class="form-group">
+              <label>Nivel / Grado</label>
+              <input v-model="editingItem.data.level" class="input-field" required />
+            </div>
+            <div class="form-group">
+              <label>Paralelo</label>
+              <input v-model="editingItem.data.parallel" class="input-field" required />
+            </div>
+          </div>
+
+          <div v-else>
+            <div class="form-group">
+              <label>Nombre de la Materia</label>
+              <input v-model="editingItem.data.name" class="input-field" required />
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" @click="editingItem = null" class="btn btn-outline">Cancelar</button>
+            <button type="submit" class="btn btn-primary">
+              <Save :size="18" /> Guardar Cambios
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 </template>
@@ -644,15 +707,25 @@ const changePassword = async () => {
   display: flex;
   padding: 0.5rem;
   gap: 0.5rem;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  flex-wrap: wrap; /* Permitir que bajen si no caben */
+}
+
+@media (max-width: 768px) {
+  .tabs-nav {
+    flex-wrap: nowrap; /* En móvil muy pequeño, mejor scroll horizontal */
+    padding-bottom: 1rem;
+  }
 }
 
 .tabs-nav::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
+  height: 4px;
+}
+.tabs-nav::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
 }
 
 .tabs-nav button {
@@ -677,6 +750,19 @@ const changePassword = async () => {
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
+@media (max-width: 1024px) {
+  .grid-layout {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .tabs-nav button {
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
 .grid-layout {
   display: grid;
   grid-template-columns: 350px 1fr;
@@ -689,11 +775,13 @@ const changePassword = async () => {
   }
 }
 
-.form-section, .list-section {
+.form-section,
+.list-section {
   padding: 1.5rem;
 }
 
-.form-section h3, .list-section h3 {
+.form-section h3,
+.list-section h3 {
   margin-bottom: 1.25rem;
   font-size: 1.1rem;
 }
@@ -760,14 +848,20 @@ const changePassword = async () => {
   color: var(--text-muted);
 }
 
-.btn-icon.delete:hover { color: var(--danger); }
+.btn-icon.delete:hover {
+  color: var(--danger);
+}
 
 .badge {
   padding: 0.2rem 0.5rem;
   font-size: 0.7rem;
   border-radius: 4px;
 }
-.badge.success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+
+.badge.success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
 
 textarea.input-field {
   min-height: 80px;
@@ -805,7 +899,9 @@ textarea.input-field {
   margin-bottom: 0.5rem;
 }
 
-.list-header h3 { margin: 0; }
+.list-header h3 {
+  margin: 0;
+}
 
 .drag-hint {
   font-size: 0.78rem;
@@ -820,7 +916,9 @@ textarea.input-field {
   gap: 0.5rem;
 }
 
-.item-card.draggable:active { cursor: grabbing; }
+.item-card.draggable:active {
+  cursor: grabbing;
+}
 
 .item-card.drag-over {
   border: 2px dashed var(--primary);
@@ -845,7 +943,10 @@ textarea.input-field {
   cursor: pointer;
 }
 
-.subject-name:hover { color: var(--primary); }
+.subject-name:hover {
+  color: var(--primary);
+}
+
 .asg-card {
   padding: 1rem;
 }
@@ -976,8 +1077,106 @@ textarea.input-field {
   .promotion-grid {
     flex-direction: column;
   }
+
   .promotion-divider {
     transform: rotate(90deg);
   }
+}
+
+.btn-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.5rem;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 90%;
+  max-width: 400px;
+  padding: 2rem;
+  animation: modalScale 0.2s ease-out;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+@keyframes modalScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+}
+
+.btn-icon:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.btn-icon.delete:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+.account-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  border-radius: 2rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.mb-4 { margin-bottom: 1rem; }
+
+.preview-box p {
+  margin-bottom: 0.5rem;
 }
 </style>

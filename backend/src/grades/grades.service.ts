@@ -478,12 +478,35 @@ export class GradesService {
         return null;
       }).filter(Boolean);
 
+      // Obtener solo las materias que están asignadas a este curso en la gestión actual
       const subjects = await this.prisma.subject.findMany({
+        where: { 
+          schoolId: Number(schoolId),
+          assignments: { some: { courseId: Number(courseId), academicYearId: latestYear?.id } }
+        },
+        orderBy: { name: 'asc' }
+      });
+
+      // Si por alguna razón no hay asignaciones aún, traer todas las del colegio como fallback
+      const finalSubjects = subjects.length > 0 ? subjects : await this.prisma.subject.findMany({
         where: { schoolId: Number(schoolId) },
         orderBy: { name: 'asc' }
       });
 
-      return { stats, attendanceIssues, reprobados, subjects };
+      // Alumnos con rendimiento bajo (51-60) para sugerir en Dificultades Leve
+      const strugglingStudents = studentList.map(s => {
+        const enrollment = s.enrollments?.[0];
+        if (!enrollment || !enrollment.grades) return null;
+        
+        // Ver si tiene alguna materia entre 51 y 60
+        const hasLowPass = enrollment.grades.some(g => g.score >= 51 && g.score <= 60);
+        if (hasLowPass) {
+          return { id: s.id, fullName: `${s.lastName} ${s.firstName}`, phone: s.phone || 'S/N' };
+        }
+        return null;
+      }).filter(Boolean);
+
+      return { stats, attendanceIssues, reprobados, subjects: finalSubjects, strugglingStudents };
     } catch (err) {
       console.error('FATAL ERROR in getPedagogicalReportData:', err.message);
       throw err;
