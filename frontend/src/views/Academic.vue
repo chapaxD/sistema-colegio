@@ -639,7 +639,7 @@ const changePassword = async () => {
             <div v-for="e in events" :key="e.id" class="item-card event-card">
               <div class="event-info">
                 <div class="event-date-badge">
-                  {{ new Date(e.date).toLocaleDateString() }}
+                  {{ new Date(e.date).toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' }) }}
                 </div>
                 <strong>{{ e.title }}</strong>
                 <p>{{ e.description }}</p>

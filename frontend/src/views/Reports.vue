@@ -84,7 +84,7 @@ const searchStudents = async () => {
   searching.value = true
   try {
     const res = await api.get('/students')
-    students.value = res.data.filter(s => 
+    students.value = res.data.filter(s =>
       s.firstName.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       s.lastName.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       s.rude.includes(searchQuery.value)
@@ -119,7 +119,7 @@ const printReport = () => {
 
 const generatePDF = () => {
   if (!report.value) return
-  
+
   const subjectsHtml = Object.entries(report.value.subjects).map(([name, data]) => `
     <tr>
       <td style="text-align: left; font-weight: 600;">${name}</td>
@@ -180,7 +180,7 @@ const generatePDF = () => {
     <div class="meta-item"><strong>Estudiante:</strong> ${report.value.student}</div>
     <div class="meta-item"><strong>Curso:</strong> ${report.value.course}</div>
     <div class="meta-item"><strong>RUDE:</strong> ${selectedStudent.value.rude}</div>
-    <div class="meta-item"><strong>Fecha Emisión:</strong> ${new Date().toLocaleDateString()}</div>
+    <div class="meta-item"><strong>Fecha Emisión:</strong> ${new Date().toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
   </div>
 
   <table>
@@ -223,6 +223,172 @@ const generatePDF = () => {
   win.document.close()
 }
 
+const printAllBulletins = async () => {
+  if (!selectedCourse.value) {
+    alert('Por favor seleccione un curso primero')
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await api.get(`/grades/report-course/${selectedCourse.value}?year=${settings.value.year}`)
+    if (res.data.length === 0) {
+      alert('No hay estudiantes inscritos en este curso')
+      return
+    }
+    generateBatchPDF(res.data)
+  } catch (err) {
+    error.value = 'Error al obtener los reportes del curso'
+    console.error(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+const generateBatchPDF = (reports) => {
+  const pages = []
+  for (let i = 0; i < reports.length; i += 2) {
+    const r1 = reports[i]
+    const r2 = reports[i + 1]
+
+    pages.push(`
+      <div class="page">
+        ${renderSingleBulletinHtml(r1)}
+        ${r2 ? renderSingleBulletinHtml(r2) : ''}
+      </div>
+    `)
+  }
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Boletines - ${reports[0].course}</title>
+  <style>
+    @page { size: letter; margin: 0; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; margin: 0; padding: 0; }
+    .page { 
+      height: 1056px; 
+      width: 816px;
+      page-break-after: always;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+    .bulletin-container {
+      height: 50%;
+      padding: 0.4in 0.5in;
+      box-sizing: border-box;
+      border-bottom: 1px dashed #cbd5e1;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .bulletin-container:last-child { border-bottom: none; }
+    
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; border-bottom: 2px solid #6366f1; padding-bottom: 5px; }
+    .school-info h2 { margin: 0; color: #4338ca; font-size: 1.1rem; }
+    .school-info p { margin: 1px 0; font-size: 0.8rem; color: #64748b; }
+    .title-block { text-align: right; }
+    .title-block h1 { margin: 0; font-size: 1.2rem; color: #1e293b; }
+    .title-block p { margin: 1px 0; font-weight: bold; color: #6366f1; font-size: 0.8rem; }
+    
+    .meta-section { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
+    .meta-item { font-size: 0.85rem; }
+    .meta-item strong { color: #475569; }
+    
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th { background: #6366f1; color: white; padding: 5px; font-size: 0.7rem; text-transform: uppercase; border: 1px solid #4338ca; }
+    td { padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 0.75rem; }
+    tr:nth-child(even) { background: #f8fafc; }
+    .score-cell { font-weight: bold; width: 50px; }
+    .final { background: #eef2ff !important; font-size: 0.85rem; }
+    
+    .footer { display: flex; justify-content: space-between; margin-top: auto; padding-top: 5px; }
+    .sign-block { text-align: center; width: 30%; }
+    .sign-line { border-top: 1px solid #94a3b8; margin-bottom: 3px; }
+    .sign-block p { margin: 1px 0; font-size: 0.7rem; color: #475569; }
+    .sign-block .name { font-weight: bold; color: #1e293b; }
+  </style>
+</head>
+<body>
+  ${pages.join('')}
+  <script>window.onload = () => window.print()<\/script>
+</body>
+</html>`
+
+  const win = window.open('', '_blank', 'width=900,height=800')
+  win.document.write(html)
+  win.document.close()
+}
+
+const renderSingleBulletinHtml = (report) => {
+  const subjectsHtml = Object.entries(report.subjects).map(([name, data]) => `
+    <tr>
+      <td style="text-align: left; font-weight: 600;">${name}</td>
+      <td class="score-cell">${data.t1 || '-'}</td>
+      <td class="score-cell">${data.t2 || '-'}</td>
+      <td class="score-cell">${data.t3 || '-'}</td>
+      <td class="score-cell final" style="color: ${data.average >= 51 ? '#10b981' : '#ef4444'}">${data.average}</td>
+    </tr>
+  `).join('')
+
+  return `
+    <div class="bulletin-container">
+      <div class="header">
+        <div class="school-info">
+          <h2>UNIDAD EDUCATIVA "${settings.value.schoolName}"</h2>
+          <p>Nivel: ${settings.value.level}</p>
+          <p>Gestión: ${settings.value.year}</p>
+        </div>
+        <div class="title-block">
+          <h1>BOLETÍN DE CALIFICACIONES</h1>
+          <p>${settings.value.year}</p>
+        </div>
+      </div>
+
+      <div class="meta-section">
+        <div class="meta-item"><strong>Estudiante:</strong> ${report.student}</div>
+        <div class="meta-item"><strong>Curso:</strong> ${report.course}</div>
+        <div class="meta-item"><strong>RUDE:</strong> ${report.rude || 'S/N'}</div>
+        <div class="meta-item"><strong>Fecha Emisión:</strong> ${new Date().toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align: left;">ÁREAS DE SABERES Y CONOCIMIENTOS</th>
+            <th>1º Trim</th>
+            <th>2º Trim</th>
+            <th>3º Trim</th>
+            <th>Prom. Final</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${subjectsHtml}
+        </tbody>
+      </table>
+
+      <div class="footer">
+        <div class="sign-block">
+          <div class="sign-line"></div>
+          <p class="name">${settings.value.teacherName}</p>
+          <p>Docente de Grado</p>
+        </div>
+        <div class="sign-block">
+          <div class="sign-line"></div>
+          <p class="name">${settings.value.directorName}</p>
+          <p>Director(a)</p>
+        </div>
+        <div class="sign-block">
+          <div class="sign-line"></div>
+          <p>Sello Unidad Educativa</p>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 const fetchPedagogicalData = async () => {
   if (!selectedCourse.value) return
   loading.value = true
@@ -230,7 +396,7 @@ const fetchPedagogicalData = async () => {
   try {
     const res = await api.get(`/grades/pedagogical/${selectedCourse.value}?period=${selectedTrimester.value}`)
     pedagogicalData.value = res.data
-    
+
     // Cargar datos guardados si existen
     if (res.data.savedReport) {
       const saved = res.data.savedReport;
@@ -341,7 +507,7 @@ const removeDifficultyRow = (index) => {
 const printDifficultiesReport = () => {
   const course = courses.value.find(c => c.id === parseInt(selectedCourse.value))
   const courseName = course ? `${course.level} ${course.parallel}` : ''
-  
+
   const rows = manualData.value.difficultiesList.map((item, idx) => `
     <tr>
       <td style="border:1px solid #000;padding:8px;text-align:center;">${idx + 1}</td>
@@ -351,7 +517,7 @@ const printDifficultiesReport = () => {
     </tr>
   `).join('')
 
-  const displayDate = new Date(manualData.value.reportDate + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  const displayDate = new Date(manualData.value.reportDate + 'T12:00:00').toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const teacherName = settings.value.teacherName || '__________________________';
   const directorLabel = settings.value.directorName.startsWith('Lic.') ? settings.value.directorName : `Lic. ${settings.value.directorName}`;
 
@@ -440,7 +606,7 @@ const printPedagogical = () => {
 
   const course = courses.value.find(c => c.id === parseInt(selectedCourse.value))
   const courseName = course ? `${course.level} ${course.parallel}` : ''
-  
+
   // Página 1: Atrasos
   const attendanceRows = pedagogicalData.value.attendanceIssues.map((item, idx) => `
     <tr>
@@ -490,7 +656,7 @@ const printPedagogical = () => {
     .map(s => {
       const data = manualData.value.subjectAvance[s.id] || { prog: '', avan: '', pend: '' }
       const total = data.avan || '0'
-    return `
+      return `
       <tr>
         <td style="border:1px solid #000;padding:5px;text-align:left;font-size:8pt;">${s.name.toUpperCase()}</td>
         <td style="border:1px solid #000;padding:5px;">${data.prog}%</td>
@@ -499,7 +665,7 @@ const printPedagogical = () => {
         <td style="border:1px solid #000;padding:5px;font-weight:bold;">${data.avan}%</td>
       </tr>
     `
-  }).join('')
+    }).join('')
 
   const html = `
 <!DOCTYPE html>
@@ -627,34 +793,46 @@ const printPedagogical = () => {
 <template>
   <div class="reports-view">
     <div class="tabs-header no-print">
-      <button @click="activeTab = 'bulletin'" :class="{ active: activeTab === 'bulletin' }">Boletines Individuales</button>
-      <button @click="activeTab = 'pedagogical'" :class="{ active: activeTab === 'pedagogical' }">Informe Pedagógico por Curso</button>
-      <button @click="activeTab = 'difficulties'" :class="{ active: activeTab === 'difficulties' }">Dificultades de Aprendizaje</button>
+      <button @click="activeTab = 'bulletin'" :class="{ active: activeTab === 'bulletin' }">Boletines
+        Individuales</button>
+      <button @click="activeTab = 'pedagogical'" :class="{ active: activeTab === 'pedagogical' }">Informe Pedagógico por
+        Curso</button>
+      <button @click="activeTab = 'difficulties'" :class="{ active: activeTab === 'difficulties' }">Dificultades de
+        Aprendizaje</button>
     </div>
 
     <div v-if="activeTab === 'bulletin'" class="search-section glass-card no-print">
-      <div class="search-group">
-        <label>Buscar Estudiante</label>
-        <div class="search-input-wrapper">
-          <Search class="search-icon" :size="20" />
-          <input 
-            v-model="searchQuery" 
-            @input="searchStudents"
-            type="text" 
-            placeholder="Ingrese RUDE o nombres..."
-            class="input-field"
-          />
+      <div class="bulletin-actions-grid">
+        <div class="search-group">
+          <label>Impresión Masiva por Curso</label>
+          <div class="flex items-center gap-4">
+            <select v-model="selectedCourse" class="input-field" style="max-width: 300px;">
+              <option value="">Seleccione un curso</option>
+              <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.level }} - {{ c.parallel }}</option>
+            </select>
+            <button @click="printAllBulletins" class="btn btn-primary" :disabled="!selectedCourse || loading"
+              style="white-space: nowrap;">
+              <Printer :size="18" />
+              Imprimir Todo (2 por hoja)
+            </button>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="search-group">
+          <label>Buscar Estudiante Individual</label>
+          <div class="search-input-wrapper">
+            <Search class="search-icon" :size="20" />
+            <input v-model="searchQuery" @input="searchStudents" type="text" placeholder="Ingrese RUDE o nombres..."
+              class="input-field" />
+          </div>
         </div>
       </div>
 
       <div v-if="students.length > 0" class="results-list">
-        <div 
-          v-for="s in students" 
-          :key="s.id" 
-          @click="generateReport(s)"
-          class="result-item"
-          :class="{ active: selectedStudent?.id === s.id }"
-        >
+        <div v-for="s in students" :key="s.id" @click="generateReport(s)" class="result-item"
+          :class="{ active: selectedStudent?.id === s.id }">
           <div class="result-info">
             <span class="student-name">{{ s.lastName }} {{ s.firstName }}</span>
             <span class="student-rude">RUDE: {{ s.rude }}</span>
@@ -734,8 +912,8 @@ const printPedagogical = () => {
           <p class="text-sm text-gray-600 mb-4">* Se muestran alumnos con materias reprobadas (notas menores a 51).</p>
           <div class="issues-list grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
             <div v-for="s in pedagogicalData.reprobados" :key="s.id" class="issue-item flex items-center gap-2">
-              <input type="checkbox" :id="'learn-'+s.id" :value="s.id" v-model="manualData.learningIssuesIds" />
-              <label :for="'learn-'+s.id" class="text-xs truncate cursor-pointer">{{ s.fullName }}</label>
+              <input type="checkbox" :id="'learn-' + s.id" :value="s.id" v-model="manualData.learningIssuesIds" />
+              <label :for="'learn-' + s.id" class="text-xs truncate cursor-pointer">{{ s.fullName }}</label>
             </div>
           </div>
           <div v-if="!pedagogicalData.reprobados?.length" class="text-xs text-muted py-2 text-center">
@@ -747,8 +925,9 @@ const printPedagogical = () => {
           <h3 class="text-sm font-bold mb-1">Avance Programático por Materia</h3>
           <div class="bg-blue-500/10 border border-blue-500/20 p-3 rounded-lg mb-4">
             <p class="text-[11px] text-blue-200">
-              <strong>Guía de llenado:</strong> Indique el porcentaje de temas avanzados respecto al total planificado. 
-              Ejemplo: <strong>100%</strong> Programado, <strong>85%</strong> Avanzado, el sistema calculará el <strong>15%</strong> Pendiente automáticamente.
+              <strong>Guía de llenado:</strong> Indique el porcentaje de temas avanzados respecto al total planificado.
+              Ejemplo: <strong>100%</strong> Programado, <strong>85%</strong> Avanzado, el sistema calculará el
+              <strong>15%</strong> Pendiente automáticamente.
             </p>
           </div>
           <div class="avance-table-wrapper overflow-x-auto">
@@ -763,17 +942,16 @@ const printPedagogical = () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="s in pedagogicalData.subjects" :key="s.id" :class="{ 'opacity-40': !manualData.selectedSubjectsIds.includes(s.id) }">
+                <tr v-for="s in pedagogicalData.subjects" :key="s.id"
+                  :class="{ 'opacity-40': !manualData.selectedSubjectsIds.includes(s.id) }">
                   <td><input type="checkbox" :value="s.id" v-model="manualData.selectedSubjectsIds" /></td>
                   <td class="text-xs font-semibold">{{ s.name }}</td>
-                  <td><input v-model="manualData.subjectAvance[s.id].prog" class="mini-input" :disabled="!manualData.selectedSubjectsIds.includes(s.id)" /></td>
+                  <td><input v-model="manualData.subjectAvance[s.id].prog" class="mini-input"
+                      :disabled="!manualData.selectedSubjectsIds.includes(s.id)" /></td>
                   <td>
-                    <input 
-                      v-model="manualData.subjectAvance[s.id].avan" 
+                    <input v-model="manualData.subjectAvance[s.id].avan"
                       @input="manualData.subjectAvance[s.id].pend = 100 - parseInt(manualData.subjectAvance[s.id].avan || 0)"
-                      class="mini-input highlight" 
-                      :disabled="!manualData.selectedSubjectsIds.includes(s.id)" 
-                    />
+                      class="mini-input highlight" :disabled="!manualData.selectedSubjectsIds.includes(s.id)" />
                   </td>
                   <td><input v-model="manualData.subjectAvance[s.id].pend" class="mini-input disabled" disabled /></td>
                 </tr>
@@ -781,7 +959,7 @@ const printPedagogical = () => {
             </table>
           </div>
         </div>
-        
+
         <div class="actions mt-4 flex gap-4">
           <button @click="savePedagogicalReport" class="btn btn-secondary flex-1">
             <Save :size="20" />
@@ -820,7 +998,7 @@ const printPedagogical = () => {
 
       <div v-if="pedagogicalData" class="difficulties-editor">
         <h3 class="text-lg font-bold mb-4">Nómina de Estudiantes con Dificultades</h3>
-        
+
         <div class="difficulties-table-wrapper">
           <table class="mini-table">
             <thead>
@@ -840,7 +1018,8 @@ const printPedagogical = () => {
                   <input v-model="item.subjects" class="mini-input" placeholder="MAT - FIS" />
                 </td>
                 <td>
-                  <textarea v-model="item.notes" class="mini-input" rows="2" placeholder="Describa la dificultad..."></textarea>
+                  <textarea v-model="item.notes" class="mini-input" rows="2"
+                    placeholder="Describa la dificultad..."></textarea>
                 </td>
                 <td>
                   <button @click="removeDifficultyRow(idx)" class="btn-delete" title="Eliminar fila">
@@ -888,69 +1067,69 @@ const printPedagogical = () => {
 
       <div class="table-container">
         <div class="bulletin glass-card printable">
-        <header class="bulletin-header">
-          <div class="school-info">
-            <h2>UNIDAD EDUCATIVA "{{ settings.schoolName }}"</h2>
-            <p>Nivel: {{ settings.level }}</p>
-          </div>
-          <div class="bulletin-title">
-            <h1>BOLETÍN DE CALIFICACIONES</h1>
-            <p>GESTIÓN ACADÉMICA {{ settings.year }}</p>
-          </div>
-        </header>
+          <header class="bulletin-header">
+            <div class="school-info">
+              <h2>UNIDAD EDUCATIVA "{{ settings.schoolName }}"</h2>
+              <p>Nivel: {{ settings.level }}</p>
+            </div>
+            <div class="bulletin-title">
+              <h1>BOLETÍN DE CALIFICACIONES</h1>
+              <p>GESTIÓN ACADÉMICA {{ settings.year }}</p>
+            </div>
+          </header>
 
-        <section class="student-meta">
-          <div class="meta-row">
-            <div class="meta-item"><strong>Estudiante:</strong> {{ report.student }}</div>
-            <div class="meta-item"><strong>Curso:</strong> {{ report.course }}</div>
-          </div>
-          <div class="meta-row">
-            <div class="meta-item"><strong>Nivel:</strong> {{ settings.level }}</div>
-            <div class="meta-item"><strong>RUDE:</strong> {{ selectedStudent.rude }}</div>
-          </div>
-        </section>
+          <section class="student-meta">
+            <div class="meta-row">
+              <div class="meta-item"><strong>Estudiante:</strong> {{ report.student }}</div>
+              <div class="meta-item"><strong>Curso:</strong> {{ report.course }}</div>
+            </div>
+            <div class="meta-row">
+              <div class="meta-item"><strong>Nivel:</strong> {{ settings.level }}</div>
+              <div class="meta-item"><strong>RUDE:</strong> {{ selectedStudent.rude }}</div>
+            </div>
+          </section>
 
-        <table class="bulletin-table">
-          <thead>
-            <tr>
-              <th>ÁREAS DE SABERES Y CONOCIMIENTOS</th>
-              <th>1er Trimestre</th>
-              <th>2do Trimestre</th>
-              <th>3er Trimestre</th>
-              <th>PROMEDIO FINAL</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(data, subject) in report.subjects" :key="subject">
-              <td class="subject-name">{{ subject }}</td>
-              <td class="score-cell">{{ data.t1 || '-' }}</td>
-              <td class="score-cell">{{ data.t2 || '-' }}</td>
-              <td class="score-cell">{{ data.t3 || '-' }}</td>
-              <td class="score-cell final">{{ data.average }}</td>
-            </tr>
-          </tbody>
-        </table>
+          <table class="bulletin-table">
+            <thead>
+              <tr>
+                <th>ÁREAS DE SABERES Y CONOCIMIENTOS</th>
+                <th>1er Trimestre</th>
+                <th>2do Trimestre</th>
+                <th>3er Trimestre</th>
+                <th>PROMEDIO FINAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(data, subject) in report.subjects" :key="subject">
+                <td class="subject-name">{{ subject }}</td>
+                <td class="score-cell">{{ data.t1 || '-' }}</td>
+                <td class="score-cell">{{ data.t2 || '-' }}</td>
+                <td class="score-cell">{{ data.t3 || '-' }}</td>
+                <td class="score-cell final">{{ data.average }}</td>
+              </tr>
+            </tbody>
+          </table>
 
-        <footer class="bulletin-footer">
-          <div class="sign-block">
-            <div class="sign-line"></div>
-            <p>{{ settings.teacherName }}</p>
-            <p>Docente de Grado</p>
-          </div>
-          <div class="sign-block">
-            <div class="sign-line"></div>
-            <p>{{ settings.directorName }}</p>
-            <p>Firma Director(a)</p>
-          </div>
-          <div class="sign-block">
-            <div class="sign-line"></div>
-            <p>Sello de la Unidad Educativa</p>
-          </div>
-        </footer>
+          <footer class="bulletin-footer">
+            <div class="sign-block">
+              <div class="sign-line"></div>
+              <p>{{ settings.teacherName }}</p>
+              <p>Docente de Grado</p>
+            </div>
+            <div class="sign-block">
+              <div class="sign-line"></div>
+              <p>{{ settings.directorName }}</p>
+              <p>Firma Director(a)</p>
+            </div>
+            <div class="sign-block">
+              <div class="sign-line"></div>
+              <p>Sello de la Unidad Educativa</p>
+            </div>
+          </footer>
+        </div>
       </div>
     </div>
   </div>
-</div>
 </template>
 
 <style scoped>
@@ -1011,34 +1190,84 @@ textarea.input-field {
   resize: vertical;
 }
 
-.mt-6 { margin-top: 1.5rem; }
-.mt-4 { margin-top: 1rem; }
-.mb-2 { margin-bottom: 0.5rem; }
-.p-4 { padding: 1rem; }
-.w-full { width: 100%; }
-.text-xs { font-size: 0.75rem; }
-.text-sm { font-size: 0.875rem; }
-.font-bold { font-weight: 700; }
-.grid { display: grid; }
-.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.gap-2 { gap: 0.5rem; }
-.max-h-40 { max-height: 10rem; }
-.overflow-y-auto { overflow-y: auto; }
-.items-center { align-items: center; }
-.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-6 {
+  margin-top: 1.5rem;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.p-4 {
+  padding: 1rem;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.text-xs {
+  font-size: 0.75rem;
+}
+
+.text-sm {
+  font-size: 0.875rem;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+}
+
+.grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.max-h-40 {
+  max-height: 10rem;
+}
+
+.overflow-y-auto {
+  overflow-y: auto;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .mini-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.mini-table th, .mini-table td {
+.mini-table th,
+.mini-table td {
   border: 1px solid var(--border);
   padding: 0.25rem;
   text-align: center;
 }
 
-.mini-table th { font-size: 0.7rem; background: rgba(99, 102, 241, 0.05); }
+.mini-table th {
+  font-size: 0.7rem;
+  background: rgba(99, 102, 241, 0.05);
+}
 
 .mini-input {
   width: 100%;
@@ -1087,7 +1316,19 @@ textarea.input-field {
 
 .search-section {
   padding: 1.5rem;
-  max-width: 600px;
+  max-width: 800px;
+}
+
+.bulletin-actions-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
 }
 
 .search-group label {
@@ -1130,7 +1371,8 @@ textarea.input-field {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.result-item:hover, .result-item.active {
+.result-item:hover,
+.result-item.active {
   background: rgba(99, 102, 241, 0.1);
   color: var(--primary);
 }
@@ -1140,8 +1382,14 @@ textarea.input-field {
   flex-direction: column;
 }
 
-.student-name { font-weight: 600; }
-.student-rude { font-size: 0.75rem; color: var(--text-muted); }
+.student-name {
+  font-weight: 600;
+}
+
+.student-rude {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 
 .searching-overlay {
   padding: 2rem;
@@ -1189,11 +1437,22 @@ textarea.input-field {
   margin-bottom: 1.5rem;
 }
 
-.school-info h2 { font-size: 1.1rem; }
-.school-info p { font-size: 0.8rem; }
+.school-info h2 {
+  font-size: 1.1rem;
+}
 
-.bulletin-title { text-align: right; }
-.bulletin-title h1 { font-size: 1.5rem; color: var(--text-main); }
+.school-info p {
+  font-size: 0.8rem;
+}
+
+.bulletin-title {
+  text-align: right;
+}
+
+.bulletin-title h1 {
+  font-size: 1.5rem;
+  color: var(--text-main);
+}
 
 .student-meta {
   display: flex;
@@ -1220,7 +1479,8 @@ textarea.input-field {
   margin-bottom: 3rem;
 }
 
-.bulletin-table th, .bulletin-table td {
+.bulletin-table th,
+.bulletin-table td {
   border: 1px solid var(--border);
   padding: 0.75rem;
   text-align: center;
@@ -1240,8 +1500,8 @@ textarea.input-field {
   width: 40%;
 }
 
-.final { 
-  font-weight: 800; 
+.final {
+  font-weight: 800;
   background: var(--bg-input) !important;
   color: var(--primary) !important;
 }
@@ -1262,20 +1522,38 @@ textarea.input-field {
   margin-bottom: 0.5rem;
 }
 
-.sign-block p { font-size: 0.75rem; }
+.sign-block p {
+  font-size: 0.75rem;
+}
 
 /* Print Mode */
 @media print {
-  .no-print { display: none !important; }
+  .no-print {
+    display: none !important;
+  }
+
   .printable {
     border: none !important;
     padding: 0 !important;
     margin: 0 !important;
     background: white !important;
   }
-  .printable * { color: black !important; border-color: #000 !important; }
-  .bulletin-table th { background: #eee !important; }
-  body { background: white !important; }
-  .app-container { padding: 0 !important; }
+
+  .printable * {
+    color: black !important;
+    border-color: #000 !important;
+  }
+
+  .bulletin-table th {
+    background: #eee !important;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  .app-container {
+    padding: 0 !important;
+  }
 }
 </style>

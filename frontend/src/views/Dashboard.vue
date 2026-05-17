@@ -37,7 +37,7 @@ const formatTime = (date) => {
   if (mins < 60) return `Hace ${mins} min`
   const hours = Math.floor(mins / 60)
   if (hours < 24) return `Hace ${hours} h`
-  return new Date(date).toLocaleDateString()
+  return new Date(date).toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 onMounted(async () => {

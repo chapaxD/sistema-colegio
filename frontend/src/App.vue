@@ -3,6 +3,7 @@ import { onMounted, ref, watch, computed } from 'vue'
 import { RouterView, RouterLink, useRoute } from 'vue-router'
 import api from './api'
 import { useAuthStore } from './stores/auth'
+import ToastContainer from './components/ToastContainer.vue'
 import { 
   LayoutDashboard, Users, BookOpen, FileText, Settings, 
   LogOut, CalendarCheck, Sun, Moon, Menu, X, User as UserIcon, Building, ShieldCheck,
@@ -71,6 +72,7 @@ const licenseStatus = computed(() => {
 
 <template>
   <div class="app-container">
+    <ToastContainer />
     <!-- Overlay for mobile sidebar -->
     <div v-if="isSidebarOpen" class="sidebar-overlay" @click="toggleSidebar"></div>
 
@@ -186,7 +188,7 @@ const licenseStatus = computed(() => {
 
         <div class="user-profile">
           <div class="user-info no-mobile">
-            <span class="user-name">{{ authStore.user?.email.split('@')[0] }}</span>
+            <span class="user-name">{{ authStore.user?.email?.split('@')[0] || 'Usuario' }}</span>
             <span class="user-role">{{ authStore.user?.role }}</span>
           </div>
           <div class="avatar">{{ authStore.user?.email?.[0]?.toUpperCase() }}</div>

@@ -415,6 +415,59 @@ export class GradesService {
     };
   }
 
+  async getCourseAcademicReports(courseId: number, year: number, schoolId: number) {
+    const students = await this.prisma.student.findMany({
+      where: {
+        schoolId,
+        enrollments: { some: { courseId, academicYear: { year } } }
+      },
+      include: {
+        enrollments: {
+          where: { courseId, academicYear: { year } },
+          include: {
+            course: true,
+            grades: true
+          }
+        }
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+    });
+
+    const subjects = await this.prisma.subject.findMany({
+      where: { schoolId },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    return students.map(student => {
+      const enrollment = student.enrollments[0];
+      const reportData = subjects.map(sub => {
+        const t1 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 1)?.score || null;
+        const t2 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 2)?.score || null;
+        const t3 = enrollment.grades.find(g => g.subjectId === sub.id && g.period === 3)?.score || null;
+        
+        const scores = [t1, t2, t3].filter(s => s !== null);
+        const average = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+
+        return {
+          name: sub.name,
+          t1, t2, t3,
+          average
+        };
+      });
+
+      return {
+        studentId: student.id,
+        student: `${student.lastName} ${student.firstName}`,
+        rude: student.rude,
+        course: `${enrollment.course.level} ${enrollment.course.parallel}`,
+        subjects: reportData.reduce((acc, curr) => {
+          acc[curr.name] = { t1: curr.t1, t2: curr.t2, t3: curr.t3, average: curr.average };
+          return acc;
+        }, {})
+      };
+    });
+  }
+
   async getPedagogicalReportData(courseId: number, period: number, schoolId: number) {
     console.log(`Generating Pedagogical Report for Course: ${courseId}, Period: ${period}, School: ${schoolId}`);
     try {

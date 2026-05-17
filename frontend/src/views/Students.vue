@@ -2,10 +2,12 @@
 import { onMounted, ref, computed, watch } from 'vue'
 import { useStudentStore } from '../stores/student'
 import { Plus, Search, UserPlus, Trash2, Edit3, Loader2, Link, FileUp, RefreshCw } from 'lucide-vue-next'
+import { useToast } from '../composables/useToast'
 import api from '../api'
 import * as XLSX from 'xlsx'
 
 const studentStore = useStudentStore()
+const toast = useToast()
 const showModal = ref(false)
 const showEnrollModal = ref(false)
 const showImportModal = ref(false)
@@ -169,7 +171,10 @@ const saveStudent = async () => {
   }
   
   if (success) {
+    toast.success(isEditing.value ? 'Estudiante actualizado correctamente' : 'Estudiante registrado correctamente')
     closeModal()
+  } else {
+    toast.error(studentStore.error || 'Ocurrió un error al guardar')
   }
 }
 
@@ -180,17 +185,18 @@ const confirmEnroll = async () => {
       courseId: parseInt(enrollmentData.value.courseId),
       academicYearId: parseInt(enrollmentData.value.academicYearId)
     })
-    alert('Operación realizada exitosamente')
+    toast.success('Inscripción realizada exitosamente')
     closeEnrollModal()
     studentStore.fetchStudents() // Recargar para ver el curso actualizado
   } catch (err) {
-    alert('Error al inscribir estudiante')
+    toast.error(err.response?.data?.message || 'Error al inscribir estudiante')
   }
 }
 
 const confirmDelete = async (id) => {
-  if (confirm('¿Estás seguro de eliminar a este estudiante?')) {
+  if (confirm('¿Estás seguro de dar de baja a este estudiante?')) {
     await studentStore.deleteStudent(id)
+    toast.success('Estudiante dado de baja')
   }
 }
 
@@ -315,7 +321,7 @@ Asegúrese de que el Excel tenga encabezados como "Apellidos" y "Nombres".`)
       }
       
       const importedCourse = importCourseId.value
-      alert(`Proceso completado.\n- Nuevos: ${countNew}\n- Ya existentes: ${countExisting}\n- Errores: ${countErrors}\nLos estudiantes han sido procesados e inscritos.`)
+      toast.info(`Proceso completado. Nuevos: ${countNew}, Existentes: ${countExisting}, Errores: ${countErrors}`, 5000)
       
       showImportModal.value = false
       importCourseId.value = ''
@@ -347,8 +353,18 @@ watch(showInactive, (newVal) => {
 const reactivateStudent = async (id) => {
   if (confirm('¿Desea reactivar a este estudiante?')) {
     await studentStore.updateStudent(id, { isActive: true })
+    toast.success('Estudiante reactivado')
     studentStore.fetchStudents(showInactive.value)
   }
+}
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A'
+  const parts = dateStr.split('T')[0].split('-')
+  if (parts.length === 3) {
+    const localDate = new Date(parts[0], parts[1] - 1, parts[2])
+    return localDate.toLocaleDateString('es-BO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
+  return dateStr
 }
 </script>
 
@@ -453,7 +469,7 @@ const reactivateStudent = async (id) => {
                   </span>
                 </td>
                 <td>{{ student.phone || '-' }}</td>
-                <td>{{ student.birthDate ? new Date(student.birthDate).toLocaleDateString() : 'N/A' }}</td>
+                <td>{{ student.birthDate ? formatDate(student.birthDate) : 'N/A' }}</td>
                 <td class="actions-cell">
                   <template v-if="student.isActive">
                     <button @click="openEnrollModal(student)" class="action-btn enroll" :title="student.enrollments?.length ? 'Cambiar de Curso' : 'Inscribir en Curso'">

@@ -109,6 +109,15 @@ export class GradesController {
   ) {
     return this.gradesService.getStudentAcademicReport(studentId, year, req.user.schoolId);
   }
+  
+  @Get('report-course/:courseId')
+  async getCourseReports(
+    @Param('courseId', ParseIntPipe) courseId: number,
+    @Query('year', ParseIntPipe) year: number,
+    @Req() req
+  ) {
+    return this.gradesService.getCourseAcademicReports(courseId, year, req.user.schoolId);
+  }
 
   @Get('pedagogical/:courseId')
   async getPedagogicalReport(
