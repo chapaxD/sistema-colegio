@@ -43,6 +43,11 @@ const router = createRouter({
       component: () => import('../views/Academic.vue')
     },
     {
+      path: '/filiacion',
+      name: 'filiacion',
+      component: () => import('../views/Filiacion.vue')
+    },
+    {
       path: '/centralizadores',
       name: 'centralizadores',
       component: () => import('../views/Centralizers.vue')

@@ -25,6 +25,26 @@ export class CreateStudentDto {
   @IsOptional()
   phone?: string;
 
+  @IsString()
+  @IsOptional()
+  ci?: string;
+
+  @IsString()
+  @IsOptional()
+  tutorName?: string;
+
+  @IsString()
+  @IsOptional()
+  tutorCi?: string;
+
+  @IsString()
+  @IsOptional()
+  tutorRelation?: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
+
   @IsOptional()
   courseId?: number;
 
