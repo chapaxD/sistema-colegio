@@ -1,8 +1,9 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { Printer, Save, Search } from 'lucide-vue-next'
+import { Printer, Save, Search, FileDown, Upload } from 'lucide-vue-next'
 import { useToast } from '../composables/useToast'
+import * as XLSX from 'xlsx'
 import api from '../api'
 
 const authStore = useAuthStore()
@@ -16,6 +17,70 @@ const teacherName = ref('')
 const filiacionRows = ref([])
 const saving = ref(false)
 const loading = ref(false)
+const importInput = ref(null)
+const importing = ref(false)
+
+const exportToExcel = () => {
+  const courseName = selectedCourse.value
+    ? `${selectedCourse.value.level} ${selectedCourse.value.parallel}`
+    : 'Filiacion'
+
+  const data = filiacionRows.value.map((r, i) => ({
+    'N°': i + 1,
+    'NOMBRE Y APELLIDO': r.fullName,
+    'FECHA NAC.': r.birthDate ? formatDateDisplay(r.birthDate) : '',
+    'C.I.': r.ci,
+    'TUTOR/PADRE/MADRE': r.tutorRelation,
+    'C.I. TUTOR': r.tutorCi,
+    'NOMBRE DEL TUTOR': r.tutorName,
+    'CELULAR': r.phone,
+    'DIRECCIÓN': r.address
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(data)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Filiación')
+  XLSX.writeFile(wb, `Filiacion_${courseName}.xlsx`)
+}
+
+const handleImportFile = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  importing.value = true
+  const reader = new FileReader()
+  reader.onload = (evt) => {
+    try {
+      const wb = XLSX.read(evt.target.result, { type: 'binary' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json(ws)
+
+      let updated = 0
+      for (const excelRow of rows) {
+        const name = (excelRow['NOMBRE Y APELLIDO'] || '').toString().trim().toLowerCase()
+        const match = filiacionRows.value.find(r => r.fullName.toLowerCase() === name)
+        if (match) {
+          if (excelRow['C.I.'] !== undefined) match.ci = excelRow['C.I.'].toString()
+          if (excelRow['TUTOR/PADRE/MADRE'] !== undefined) match.tutorRelation = excelRow['TUTOR/PADRE/MADRE'].toString()
+          if (excelRow['C.I. TUTOR'] !== undefined) match.tutorCi = excelRow['C.I. TUTOR'].toString()
+          if (excelRow['NOMBRE DEL TUTOR'] !== undefined) match.tutorName = excelRow['NOMBRE DEL TUTOR'].toString()
+          if (excelRow['CELULAR'] !== undefined) match.phone = excelRow['CELULAR'].toString()
+          if (excelRow['DIRECCIÓN'] !== undefined) match.address = excelRow['DIRECCIÓN'].toString()
+          updated++
+        }
+      }
+      if (updated > 0) {
+        toast.success(`${updated} estudiante(s) actualizados desde Excel. Presiona "Guardar" para confirmar.`)
+      } else {
+        toast.warning('No se encontraron coincidencias. Verifica que los nombres estén exactamente igual.')
+      }
+    } catch {
+      toast.error('Error al leer el archivo Excel.')
+    }
+    importing.value = false
+    if (importInput.value) importInput.value.value = ''
+  }
+  reader.readAsBinaryString(file)
+}
 
 const saveAll = async () => {
   const rowsWithStudent = filiacionRows.value.filter(r => r.studentId)
@@ -208,6 +273,15 @@ const printFiliacion = () => {
           <Save :size="18" />
           {{ saving ? 'Guardando...' : 'Guardar Datos' }}
         </button>
+        <button @click="exportToExcel" class="btn btn-outline" :disabled="!selectedCourseId || filiacionRows.length === 0">
+          <FileDown :size="18" />
+          Exportar Excel
+        </button>
+        <button @click="importInput.click()" class="btn btn-outline" :disabled="!selectedCourseId || importing">
+          <Upload :size="18" />
+          {{ importing ? 'Importando...' : 'Importar Excel' }}
+        </button>
+        <input ref="importInput" type="file" accept=".xlsx,.xls" style="display:none" @change="handleImportFile" />
         <button @click="printFiliacion" class="btn btn-outline" :disabled="!selectedCourseId || filiacionRows.length === 0">
           <Printer :size="18" />
           Imprimir / PDF
