@@ -10,7 +10,19 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   getters: {
-    isAuthenticated: (state) => !!state.token,
+    isAuthenticated: (state) => {
+      if (!state.token) return false;
+      try {
+        // Decodificar el payload del JWT (sin verificar firma — solo para revisar expiración)
+        const payload = JSON.parse(atob(state.token.split('.')[1]));
+        if (payload.exp && Date.now() / 1000 > payload.exp) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+      return true;
+    },
     isAdmin: (state) => state.user?.role === 'ADMIN',
   },
 
@@ -41,6 +53,15 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.reload(); // Recargar para limpiar estado
+    },
+
+    clearExpiredSession() {
+      if (!this.isAuthenticated && this.token) {
+        this.user = null;
+        this.token = null;
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
     },
 
     updateUser(userData) {

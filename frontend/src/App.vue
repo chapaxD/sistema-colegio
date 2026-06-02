@@ -35,6 +35,9 @@ onMounted(async () => {
   const theme = isDark.value ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
 
+  // Limpiar sesión si el token expiró
+  authStore.clearExpiredSession()
+
   // Refrescar estado de licencia si no es super admin
   if (authStore.isAuthenticated && authStore.user?.role !== 'SUPER_ADMIN') {
     try {

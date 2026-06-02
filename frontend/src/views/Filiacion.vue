@@ -93,9 +93,9 @@ const loadStudents = async () => {
       fullName: `${s.lastName} ${s.firstName}`,
       birthDate: s.birthDate ? formatDateInput(s.birthDate) : '',
       ci: s.ci || '',
-      tutorRelation: '',
-      tutorCi: '',
-      tutorName: '',
+      tutorRelation: s.tutorRelation || '',
+      tutorCi: s.tutorCi || '',
+      tutorName: s.tutorName || '',
       phone: s.phone || '',
       address: s.address || ''
     }))
@@ -400,6 +400,17 @@ const printFiliacion = () => {
 .cell-input:focus {
   background: rgba(99, 102, 241, 0.08);
   border-radius: 4px;
+}
+
+select.cell-input {
+  background-color: var(--bg-select);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+select.cell-input option {
+  background-color: var(--bg-select);
+  color: var(--text-main);
 }
 
 .row-filled {
