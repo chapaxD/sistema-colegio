@@ -48,6 +48,11 @@ const router = createRouter({
       component: () => import('../views/Filiacion.vue')
     },
     {
+      path: '/datos-tutor',
+      name: 'datos-tutor',
+      component: () => import('../views/TutorData.vue')
+    },
+    {
       path: '/centralizadores',
       name: 'centralizadores',
       component: () => import('../views/Centralizers.vue')

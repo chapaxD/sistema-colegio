@@ -7,7 +7,7 @@ import ToastContainer from './components/ToastContainer.vue'
 import { 
   LayoutDashboard, Users, BookOpen, FileText, Settings, 
   LogOut, CalendarCheck, Sun, Moon, Menu, X, User as UserIcon, Building, ShieldCheck,
-  ShieldAlert, Clock, ClipboardList
+  ShieldAlert, Clock, ClipboardList, UserCheck
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -104,6 +104,10 @@ const licenseStatus = computed(() => {
           <RouterLink to="/filiacion" class="nav-item" active-class="active">
             <ClipboardList :size="20" />
             <span>Cuadro de Filiación</span>
+          </RouterLink>
+          <RouterLink to="/datos-tutor" class="nav-item" active-class="active">
+            <UserCheck :size="20" />
+            <span>Datos del Tutor</span>
           </RouterLink>
 
           <!-- Secciones de Docente -->

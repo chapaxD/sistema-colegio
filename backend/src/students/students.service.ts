@@ -135,6 +135,7 @@ export class StudentsService {
       data: {
         ...dto,
         birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
+        tutorBirthDate: dto.tutorBirthDate ? new Date(dto.tutorBirthDate) : undefined,
       },
       include: {
         enrollments: {

@@ -57,10 +57,13 @@ model Student {
   ci            String?      // Cédula de Identidad del estudiante
   phone         String?
   birthDate     DateTime?
-  tutorName     String?      // Nombre del padre, madre o tutor
-  tutorCi       String?      // C.I. del tutor
-  tutorRelation String?      // Padre, Madre, Tutor, Abuelo/a
-  address       String?      // Dirección del estudiante
+  tutorName        String?      // Nombre del padre, madre o tutor
+  tutorCi          String?      // C.I. del tutor
+  tutorRelation    String?      // Padre, Madre, Tutor, Abuelo/a
+  tutorOcupacion   String?      // Ocupación del tutor
+  tutorInstruccion String?      // Mayor grado de instrucción del tutor
+  tutorBirthDate   DateTime?    // Fecha de nacimiento del tutor
+  address          String?      // Dirección del estudiante
   isActive      Boolean      @default(true)
   schoolId    Int
   enrollments Enrollment[]
