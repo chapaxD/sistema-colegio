@@ -130,13 +130,24 @@ export class StudentsService {
   }
 
   async update(id: number, dto: any, schoolId: number) {
+    const updateData: any = { ...dto }
+
+    // Solo actualizar fechas si vienen explícitamente en la petición
+    if ('birthDate' in dto) {
+      updateData.birthDate = dto.birthDate ? new Date(dto.birthDate) : null
+    } else {
+      delete updateData.birthDate
+    }
+
+    if ('tutorBirthDate' in dto) {
+      updateData.tutorBirthDate = dto.tutorBirthDate ? new Date(dto.tutorBirthDate) : null
+    } else {
+      delete updateData.tutorBirthDate
+    }
+
     return this.prisma.student.update({
       where: { id, schoolId },
-      data: {
-        ...dto,
-        birthDate: dto.birthDate ? new Date(dto.birthDate) : null,
-        tutorBirthDate: dto.tutorBirthDate ? new Date(dto.tutorBirthDate) : undefined,
-      },
+      data: updateData,
       include: {
         enrollments: {
           include: { course: true }

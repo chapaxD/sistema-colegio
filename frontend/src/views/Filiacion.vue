@@ -4,6 +4,8 @@ import { useAuthStore } from '../stores/auth'
 import { Printer, Save, Search, FileDown, Upload } from 'lucide-vue-next'
 import { useToast } from '../composables/useToast'
 import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import api from '../api'
 
 const authStore = useAuthStore()
@@ -199,6 +201,58 @@ const formatDateDisplay = (dateStr) => {
   return dateStr
 }
 
+const downloadPDF = () => {
+  const courseName = selectedCourse.value
+    ? `${selectedCourse.value.level} "${selectedCourse.value.parallel}"`
+    : 'Filiacion'
+  const year = selectedYear.value?.year || new Date().getFullYear()
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+
+  doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
+  doc.text('FILIACIÓN DE LOS ESTUDIANTES', doc.internal.pageSize.getWidth() / 2, 14, { align: 'center' })
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`UNIDAD EDUCATIVA: ${schoolName.value}`, 14, 22)
+  doc.text(`CURSO: ${courseName}`, doc.internal.pageSize.getWidth() / 2, 22)
+  doc.text(`PROFESOR/A: ${teacherName.value}`, 14, 28)
+  doc.text(`GESTIÓN: ${year}`, doc.internal.pageSize.getWidth() / 2, 28)
+
+  const head = [['N°', 'NOMBRE Y APELLIDO', 'FECHA NAC.', 'C.I.', 'TUTOR/\nPADRE/MADRE', 'C.I. TUTOR', 'NOMBRE DEL PADRE, MADRE O TUTOR', 'CELULAR', 'DIRECCIÓN']]
+  const body = filiacionRows.value.map((r, i) => [
+    i + 1,
+    r.fullName,
+    formatDateDisplay(r.birthDate),
+    r.ci,
+    r.tutorRelation,
+    r.tutorCi,
+    r.tutorName,
+    r.phone,
+    r.address
+  ])
+
+  autoTable(doc, {
+    head,
+    body,
+    startY: 33,
+    styles: { fontSize: 7.5, cellPadding: 1.5, lineColor: [0, 0, 0], lineWidth: 0.2 },
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      2: { cellWidth: 20, halign: 'center' },
+      3: { cellWidth: 18, halign: 'center' },
+      4: { cellWidth: 18, halign: 'center' },
+      5: { cellWidth: 18, halign: 'center' },
+      7: { cellWidth: 18, halign: 'center' },
+    },
+    alternateRowStyles: { fillColor: [250, 250, 250] },
+  })
+
+  doc.save(`Filiacion_${courseName}_${year}.pdf`)
+}
+
 const printFiliacion = () => {
   const courseName = selectedCourse.value
     ? `${selectedCourse.value.level} "${selectedCourse.value.parallel}"`
@@ -282,9 +336,13 @@ const printFiliacion = () => {
           {{ importing ? 'Importando...' : 'Importar Excel' }}
         </button>
         <input ref="importInput" type="file" accept=".xlsx,.xls" style="display:none" @change="handleImportFile" />
+        <button @click="downloadPDF" class="btn btn-outline" :disabled="!selectedCourseId || filiacionRows.length === 0">
+          <FileDown :size="18" />
+          Descargar PDF
+        </button>
         <button @click="printFiliacion" class="btn btn-outline" :disabled="!selectedCourseId || filiacionRows.length === 0">
           <Printer :size="18" />
-          Imprimir / PDF
+          Imprimir
         </button>
       </div>
     </div>

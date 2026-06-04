@@ -4,6 +4,8 @@ import { useAuthStore } from '../stores/auth'
 import { Printer, Save, Search, FileDown, Upload } from 'lucide-vue-next'
 import { useToast } from '../composables/useToast'
 import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import api from '../api'
 
 const authStore = useAuthStore()
@@ -208,6 +210,57 @@ const handleImportFile = (e) => {
   reader.readAsBinaryString(file)
 }
 
+const downloadPDF = () => {
+  const courseName = selectedCourse.value
+    ? `${selectedCourse.value.level} "${selectedCourse.value.parallel}"`
+    : 'DatosTutor'
+  const year = selectedYear.value?.year || new Date().getFullYear()
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' })
+
+  doc.setFontSize(12)
+  doc.setFont('helvetica', 'bold')
+  doc.text('DATOS DEL PADRE, MADRE O TUTOR', doc.internal.pageSize.getWidth() / 2, 14, { align: 'center' })
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`UNIDAD EDUCATIVA: ${schoolName.value}`, 14, 22)
+  doc.text(`CURSO: ${courseName}`, doc.internal.pageSize.getWidth() / 2, 22)
+  doc.text(`GESTIÓN: ${year}`, doc.internal.pageSize.getWidth() - 14, 22, { align: 'right' })
+
+  const head = [['N°', 'ESTUDIANTE', 'PADRE/\nMADRE/\nTUTOR', 'NOMBRE Y APELLIDO DEL PADRE', 'C.I.', 'OCUPACIÓN', 'GRADO DE\nINSTRUCCIÓN', 'FECHA DE\nNACIMIENTO', 'DIRECCIÓN', 'CELULAR']]
+  const body = rows.value.map((r, i) => [
+    i + 1,
+    r.fullName,
+    r.tutorRelation,
+    r.tutorName,
+    r.tutorCi,
+    r.tutorOcupacion,
+    r.tutorInstruccion,
+    formatDateDisplay(r.tutorBirthDate),
+    r.address,
+    r.phone
+  ])
+
+  autoTable(doc, {
+    head,
+    body,
+    startY: 30,
+    styles: { fontSize: 7, cellPadding: 1.5, lineColor: [0, 0, 0], lineWidth: 0.2 },
+    headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      2: { cellWidth: 16, halign: 'center' },
+      4: { cellWidth: 18, halign: 'center' },
+      7: { cellWidth: 22, halign: 'center' },
+      9: { cellWidth: 18, halign: 'center' },
+    },
+    alternateRowStyles: { fillColor: [250, 250, 250] },
+  })
+
+  doc.save(`DatosTutor_${courseName}_${year}.pdf`)
+}
+
 const printTable = () => {
   const courseName = selectedCourse.value
     ? `${selectedCourse.value.level} "${selectedCourse.value.parallel}"`
@@ -290,9 +343,13 @@ const printTable = () => {
           {{ importing ? 'Importando...' : 'Importar Excel' }}
         </button>
         <input ref="importInput" type="file" accept=".xlsx,.xls" style="display:none" @change="handleImportFile" />
+        <button @click="downloadPDF" class="btn btn-outline" :disabled="!selectedCourseId || rows.length === 0">
+          <FileDown :size="18" />
+          Descargar PDF
+        </button>
         <button @click="printTable" class="btn btn-outline" :disabled="!selectedCourseId || rows.length === 0">
           <Printer :size="18" />
-          Imprimir / PDF
+          Imprimir
         </button>
       </div>
     </div>
