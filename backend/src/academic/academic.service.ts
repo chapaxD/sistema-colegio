@@ -35,8 +35,10 @@ export class AcademicService {
   }
 
   async findAllCourses(schoolId: number, userId?: number, role?: string) {
+    const orderBy = [{ level: 'asc' as const }, { parallel: 'asc' as const }];
+
     if (role === 'TEACHER' && userId) {
-      return this.prisma.course.findMany({
+      const assigned = await this.prisma.course.findMany({
         where: {
           schoolId,
           assignments: {
@@ -44,10 +46,13 @@ export class AcademicService {
               teacher: { userId }
             }
           }
-        }
+        },
+        orderBy
       });
+      if (assigned.length > 0) return assigned;
     }
-    return this.prisma.course.findMany({ where: { schoolId } });
+
+    return this.prisma.course.findMany({ where: { schoolId }, orderBy });
   }
 
   // Materias
