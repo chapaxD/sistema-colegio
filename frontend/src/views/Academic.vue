@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import api from '../api'
 import { useAuthStore } from '../stores/auth'
 import { Book, Layers, Plus, Save, Trash2, Calendar, Clock, GripVertical, Users, User, ArrowUpRight } from 'lucide-vue-next'
+import { cache } from '../utils/cache'
 
 const authStore = useAuthStore()
 
@@ -57,6 +58,8 @@ const fetchData = async () => {
     events.value = e.data
     teachers.value = t.data
     assignments.value = asg.data
+    cache.set('academic_courses', c.data)
+    cache.set('academic_subjects', s.data)
 
     if (years.value.length > 0) {
       newAssignment.value.academicYearId = years.value[0].id

@@ -20,6 +20,7 @@ const dimensionScores = ref([]) // Fijas (AUTO)
 
 const loading = ref(false)
 const generatingPDF = ref(false)
+const printOrientation = ref('portrait')
 const saving = ref(false)
 const syncDimensions = ref(false)
 const isDirectMode = ref(false)
@@ -35,22 +36,14 @@ const settings = ref({
 
 onMounted(async () => {
   try {
-    const cachedC = cache.get('academic_courses')
-    const cachedS = cache.get('academic_subjects')
-
-    if (cachedC && cachedS) {
-      courses.value = cachedC
-      subjects.value = cachedS
-    } else {
-      const [c, s] = await Promise.all([
-        api.get('/academic/courses'),
-        api.get('/academic/subjects')
-      ])
-      courses.value = c.data
-      subjects.value = s.data
-      cache.set('academic_courses', c.data)
-      cache.set('academic_subjects', s.data)
-    }
+    const [c, s] = await Promise.all([
+      api.get('/academic/courses'),
+      api.get('/academic/subjects')
+    ])
+    courses.value = Array.isArray(c.data) ? c.data : []
+    subjects.value = Array.isArray(s.data) ? s.data : []
+    cache.set('academic_courses', courses.value)
+    cache.set('academic_subjects', subjects.value)
 
     const saved = localStorage.getItem('school_settings')
     if (saved) settings.value = JSON.parse(saved)
@@ -313,7 +306,7 @@ const generatePDF = () => {
     .sig { text-align:center; width:55mm; }
     .sig-line { border-top:1px solid #000; margin-bottom:3px; }
     .sig p { font-size:7.5pt; }
-    @page { size: letter landscape; margin: 8mm; }
+    @page { size: letter ${printOrientation.value}; margin: 8mm; }
     @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
   </style>
 </head>
@@ -425,6 +418,13 @@ const generatePDF = () => {
         <label for="direct-mode" style="font-size: 0.8rem; cursor: pointer; color: var(--primary); font-weight: bold;">
           MODO DIRECTO (Solo Nota Final)
         </label>
+      </div>
+      <div class="filter-group" style="width: auto;">
+        <label>Orientación al imprimir</label>
+        <select v-model="printOrientation" class="input-field">
+          <option value="portrait">Vertical</option>
+          <option value="landscape">Horizontal</option>
+        </select>
       </div>
       <div class="action-buttons">
         <button @click="saveAll" class="btn btn-primary" :disabled="saving || students.length === 0">

@@ -31,22 +31,14 @@ const settings = ref({
 
 onMounted(async () => {
   try {
-    const cachedC = cache.get('academic_courses')
-    const cachedS = cache.get('academic_subjects')
-
-    if (cachedC && cachedS) {
-      courses.value = cachedC
-      subjects.value = cachedS
-    } else {
-      const [c, s] = await Promise.all([
-        api.get('/academic/courses'),
-        api.get('/academic/subjects')
-      ])
-      courses.value = c.data
-      subjects.value = s.data
-      cache.set('academic_courses', c.data)
-      cache.set('academic_subjects', s.data)
-    }
+    const [c, s] = await Promise.all([
+      api.get('/academic/courses'),
+      api.get('/academic/subjects')
+    ])
+    courses.value = Array.isArray(c.data) ? c.data : []
+    subjects.value = Array.isArray(s.data) ? s.data : []
+    cache.set('academic_courses', courses.value)
+    cache.set('academic_subjects', subjects.value)
 
     const savedSettings = localStorage.getItem('school_settings')
     if (savedSettings) {

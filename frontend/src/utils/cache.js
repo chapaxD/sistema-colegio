@@ -15,6 +15,10 @@ export const cache = {
   set(key, data) {
     sessionStorage.setItem(key, JSON.stringify(data));
   },
+
+  remove(key) {
+    sessionStorage.removeItem(key);
+  },
   
   clear() {
     sessionStorage.clear();
